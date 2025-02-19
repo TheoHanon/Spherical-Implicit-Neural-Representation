@@ -21,7 +21,7 @@ class HerglotzNet(nn.Module):
         out_features (int): Number of output features.
         omega0 (float, optional): Scaling factor for the positional encoding. Default is 1.0.
         seed (Optional[int], optional): Seed for random number generation to ensure reproducibility.
-        input_domain (str, optional): Domain of the input. Accepts "s2", "s1", "cart3", or "cart2". Default is "s2".
+        input_domain (str, optional): Domain of the input. Accepts "s2", "s1", "r3", or "r2". Default is "s2".
         outermost_linear (bool, optional): If True, the final layer is a linear transformation only.
                                            If False, a sine activation is applied after the final linear transformation.
                                            Default is False.

@@ -11,8 +11,8 @@ class TestHerglotzPE(unittest.TestCase):
         self.assertIn("Unknown input domain", str(context.exception))
 
     def test_forward_shape_s2_cart3(self):
-        # For "s2" or "cart3", the transform sph2_to_cart3 expects input with shape (..., 2)
-        for domain, dim in zip(["s2", "cart3"], [2, 3]):
+        # For "s2" or "r3", the transform sph2_to_cart3 expects input with shape (..., 2)
+        for domain, dim in zip(["s2", "r3"], [2, 3]):
             with self.subTest(domain="s2"):
                 num_atoms = 4
                 module = HerglotzPE(
@@ -27,8 +27,8 @@ class TestHerglotzPE(unittest.TestCase):
                 self.assertTrue(torch.is_floating_point(out))
 
     def test_forward_shape_s1_cart2(self):
-        # For "s1" or "cart2", the transform sph1_to_cart2 expects input with shape (..., 1)
-        for domain, dim in zip(["s1", "cart2"], [1, 2]):
+        # For "s1" or "r2", the transform sph1_to_cart2 expects input with shape (..., 1)
+        for domain, dim in zip(["s1", "r2"], [1, 2]):
             with self.subTest(domain=domain):
                 num_atoms = 3
                 module = HerglotzPE(
@@ -80,9 +80,7 @@ class TestHerglotzPE(unittest.TestCase):
     def test_forward_complexity(self):
         # Test that the forward pass applies the intended complex arithmetic.
         num_atoms = 2
-        module = HerglotzPE(
-            num_atoms=num_atoms, omega0=1.0, seed=0, input_domain="cart3"
-        )
+        module = HerglotzPE(num_atoms=num_atoms, omega0=1.0, seed=0, input_domain="r3")
         # Manually set parameters to known values.
         module.w_real.data.fill_(0.5)
         module.w_imag.data.fill_(0.0)

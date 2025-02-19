@@ -9,7 +9,7 @@ class HerglotzPE(nn.Module):
     HerglotzPE Positional Encoding Module
 
     This module implements a positional encoding based on Herglotz functions. It is designed to
-    work with inputs in different domains: either spherical (s1 or s2) or Cartesian (cart2 or cart3).
+    work with inputs in different domains: either spherical (s1 or s2) or Cartesian (r2 or r3).
     It generates a set of complex atoms and applies a linear transformation in a vectorized manner
     using complex arithmetic.
 
@@ -17,8 +17,8 @@ class HerglotzPE(nn.Module):
         num_atoms (int): The number of atoms (or frequency components) used in the encoding.
         omega0 (float, optional): A scaling factor applied to the transformation. Default is 1.0.
         seed (Optional[int], optional): Random seed for reproducibility of the atom generation. Default is None.
-        input_domain (str, optional): The domain of the input. Options are "s1", "s2", "cart2", or "cart3".
-                                      "s2" and "cart3" are treated as 3-dimensional, while "s1" and "cart2" are 2-dimensional.
+        input_domain (str, optional): The domain of the input. Options are "s1", "s2", "r2", or "r3".
+                                      "s2" and "r3" are treated as 3-dimensional, while "s1" and "r2" are 2-dimensional.
                                       Default is "s2".
 
     Attributes:
@@ -46,9 +46,9 @@ class HerglotzPE(nn.Module):
 
         self.input_domain = input_domain.lower()
 
-        if self.input_domain in ["s2", "cart3"]:
+        if self.input_domain in ["s2", "r3"]:
             self.input_dim = 3
-        elif self.input_domain in ["s1", "cart2"]:
+        elif self.input_domain in ["s1", "r2"]:
             self.input_dim = 2
         else:
             raise ValueError(f"Unknown input domain: {input_domain}")
