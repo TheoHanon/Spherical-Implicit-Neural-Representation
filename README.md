@@ -24,7 +24,7 @@ Below is an example of how to instantiate and use the `HerglotzNet` module:
 
 ```python
 import torch
-from spherical_inr.inr import HerglotzNet  # adjust the import based on your module structure
+import spherical_inr as sph 
 
 # Parameters for the HerglotzNet
 num_atoms = 16
@@ -37,7 +37,7 @@ input_domain = "s2"  # Options: "s2", "s1", "r3", "r2"
 outermost_linear = True  # If False, a sine activation is applied after the last linear layer
 
 # Instantiate the network
-model = HerglotzNet(
+model = sph.HerglotzNet(
     num_atoms=num_atoms,
     hidden_layers=hidden_layers,
     hidden_features=hidden_features,
@@ -48,8 +48,8 @@ model = HerglotzNet(
     outermost_linear=outermost_linear,
 )
 
-# Example input (ensure that it matches your expected shape for the HerglotzPE encoding)
-dummy_input = torch.randn(4, 3)  # For example, a batch of 4 inputs
+# Example input 
+dummy_input = torch.randn(4, 3)  
 output = model(dummy_input)
 print(output)
 ```
