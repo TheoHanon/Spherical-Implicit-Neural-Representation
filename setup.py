@@ -11,7 +11,7 @@ setup(
     description="A package for spherical positional encoding",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/TheoHanon/spherical_inr",  # Update with your repo URL if applicable.
+    url="https://github.com/TheoHanon/Spherical-Implicit-Neural-Representation",  
     packages=find_packages(include=["spherical_inr", "spherical_inr.*"]),
     install_requires=[
         "torch>=1.7.0",
