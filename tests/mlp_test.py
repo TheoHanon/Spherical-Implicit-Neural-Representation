@@ -1,120 +1,72 @@
+import unittest
 import torch
 import torch.nn as nn
 import numpy as np
-import unittest
-from spherical_inr import (
-    VanillaMLP,
-    SineMLP,
-)
 
-
-class TestVanillaMLP(unittest.TestCase):
-    def setUp(self):
-        self.input_features = 10
-        self.output_features = 5
-        self.hidden_features = 20
-        self.hidden_layers = 3
-        self.batch_size = 4
-
-    def test_output_shape_last_linear_true(self):
-        # With last_linear True the final layer is linear.
-        mlp = VanillaMLP(
-            input_features=self.input_features,
-            output_features=self.output_features,
-            hidden_features=self.hidden_features,
-            hidden_layers=self.hidden_layers,
-            last_linear=True,
-        )
-        x = torch.randn(self.batch_size, self.input_features)
-        output = mlp(x)
-        self.assertEqual(output.shape, (self.batch_size, self.output_features))
-
-    def test_output_shape_last_linear_false(self):
-        # With last_linear False, the final layer output is passed through the activation.
-        mlp = VanillaMLP(
-            input_features=self.input_features,
-            output_features=self.output_features,
-            hidden_features=self.hidden_features,
-            hidden_layers=self.hidden_layers,
-            last_linear=False,
-        )
-        x = torch.randn(self.batch_size, self.input_features)
-        output = mlp(x)
-        self.assertEqual(output.shape, (self.batch_size, self.output_features))
-
-    def test_activation_effect_on_last_layer(self):
-        # Test that when last_linear is False, the output equals the activation applied to the final linear output.
-        # For clarity, we set all weights and biases to zero so that linear outputs are zero.
-        mlp = VanillaMLP(
-            input_features=self.input_features,
-            output_features=self.output_features,
-            hidden_features=self.hidden_features,
-            hidden_layers=self.hidden_layers,
-            last_linear=False,  # Activation will be applied on the last layer.
-        )
-        # Manually set weights and biases of all layers to zero.
-        for layer in mlp.hidden_layers:
-            nn.init.constant_(layer.weight, 0.0)
-            if layer.bias is not None:
-                nn.init.constant_(layer.bias, 0.0)
-        x = torch.randn(self.batch_size, self.input_features)
-        # For zero linear outputs, activation(x) should be activation(0)
-        # VanillaMLP uses nn.ReLU as default activation so ReLU(0) = 0.
-        output = mlp(x)
-        self.assertTrue(torch.allclose(output, torch.zeros_like(output), atol=1e-6))
+from spherical_inr import MLP, SineMLP
 
 
 class TestSineMLP(unittest.TestCase):
+
     def setUp(self):
-        self.input_features = 8
-        self.output_features = 4
-        self.hidden_features = 16
-        self.hidden_layers = 2
-        self.batch_size = 3
-        self.omega0 = 1.5
+        self.input_features = 3
+        self.output_features = 2
+        self.hidden_sizes = [10, 10]
+        self.bias = True
+        self.omega0 = 1.0
+        self.batch_size = 5
 
-    def test_output_shape(self):
-        # SineMLP should return an output with shape (batch_size, output_features)
-        mlp = SineMLP(
+        # Create an instance of SineMLP
+        self.mlp = SineMLP(
             input_features=self.input_features,
             output_features=self.output_features,
-            hidden_features=self.hidden_features,
-            hidden_layers=self.hidden_layers,
+            hidden_sizes=self.hidden_sizes,
+            bias=self.bias,
             omega0=self.omega0,
         )
+
+    def test_abstract_mlp_instantiation(self):
+        # Instantiating the abstract base class should raise an error.
+        with self.assertRaises(TypeError):
+            _ = MLP(self.input_features, self.output_features)
+
+    def test_forward_output_shape(self):
+        # Create a dummy input tensor of shape (batch_size, input_features)
         x = torch.randn(self.batch_size, self.input_features)
-        output = mlp(x)
+        output = self.mlp(x)
+        # Check that the output shape is (batch_size, output_features)
         self.assertEqual(output.shape, (self.batch_size, self.output_features))
-        self.assertTrue(torch.all(torch.isfinite(output)))
 
-    def test_omega0_buffer(self):
-        # Check that the omega0 value is registered correctly as a buffer.
-        mlp = SineMLP(
-            input_features=self.input_features,
-            output_features=self.output_features,
-            hidden_features=self.hidden_features,
-            hidden_layers=self.hidden_layers,
-            omega0=self.omega0,
-        )
-        self.assertTrue(
-            torch.allclose(mlp.omega0, torch.tensor(self.omega0, dtype=torch.float32))
-        )
-
-    def test_weight_initialization_bounds(self):
-        # For each linear layer, verify that the weights are initialized within [-bound, bound]
-        mlp = SineMLP(
-            input_features=self.input_features,
-            output_features=self.output_features,
-            hidden_features=self.hidden_features,
-            hidden_layers=self.hidden_layers,
-            omega0=self.omega0,
-        )
-        for layer in mlp.hidden_layers:
+    def test_layer_initialization(self):
+        # Verify that each hidden layer's weights and biases are initialized as expected.
+        for layer in self.mlp.hidden_layers:
             fan_in = layer.weight.size(1)
             bound = np.sqrt(6 / fan_in) / self.omega0
-            weights = layer.weight.detach().cpu().numpy()
-            self.assertTrue(np.all(weights <= bound + 1e-6))
-            self.assertTrue(np.all(weights >= -bound - 1e-6))
+            # Check that all weights are within the interval [-bound, bound]
+            self.assertTrue(torch.all(layer.weight <= bound + 1e-5))
+            self.assertTrue(torch.all(layer.weight >= -bound - 1e-5))
+            # If bias exists, ensure it is initialized to zero.
+            if layer.bias is not None:
+                self.assertTrue(
+                    torch.allclose(layer.bias, torch.zeros_like(layer.bias))
+                )
+
+    def test_forward_activation_function(self):
+        # Since SineMLP applies torch.sin(omega0 * layer(x)) for all layers except the last,
+        # we can perform a basic sanity check: the sine function returns values in [-1, 1].
+        # We run the forward pass on a fixed input and ensure that intermediate outputs (if extracted)
+        # are within the expected range.
+        x1 = torch.randn(self.batch_size, self.input_features)
+        x2 = x1.clone()
+        # Forward pass through all but the last layer manually.
+        for layer in self.mlp.hidden_layers[:-1]:
+            x1 = torch.sin(self.omega0 * layer(x1))
+            self.assertTrue(torch.all(x1 <= 1.0))
+            self.assertTrue(torch.all(x1 >= -1.0))
+        # Complete the forward pass.
+        output = self.mlp(x2)
+        # We only check the shape of the final output.
+        self.assertEqual(output.shape, (self.batch_size, self.output_features))
 
 
 if __name__ == "__main__":

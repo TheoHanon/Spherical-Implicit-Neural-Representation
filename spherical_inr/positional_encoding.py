@@ -6,6 +6,25 @@ from abc import ABC, abstractmethod
 
 
 class PositionalEncoding(ABC, nn.Module):
+    """
+    Abstract base class for positional encoding modules.
+
+    Parameters:
+        num_atoms (int): Number of atoms (encoding vectors) to generate.
+        input_dim (int): Dimensionality of the input.
+        seed (Optional[int]): Optional random seed for reproducibility.
+
+    Attributes:
+        num_atoms (int): Number of atoms used in the encoding.
+        input_dim (int): Dimensionality of the input.
+        gen (Optional[torch.Generator]): Random number generator for reproducibility (if seed is provided).
+
+    Methods:
+        forward(x: torch.Tensor) -> torch.Tensor:
+            Abstract method to compute the positional encoding of input tensor x.
+        extra_repr() -> str:
+            Returns a string representation of the module's parameters.
+    """
 
     def __init__(
         self, num_atoms: int, input_dim: int, seed: Optional[int] = None
@@ -30,34 +49,33 @@ class PositionalEncoding(ABC, nn.Module):
 
 class HerglotzPE(PositionalEncoding):
     """
-    DEPRECIATED DESCRIPTION:
+    Herglotz Positional Encoding.
 
-    HerglotzPE Positional Encoding Module
-
-    This module implements a positional encoding based on Herglotz functions. It is designed to
-    work with inputs in different domains: either spherical (s1 or s2) or Cartesian (r2 or r3).
-    It generates a set of complex atoms and applies a linear transformation in a vectorized manner
-    using complex arithmetic.
+    This module generates a positional encoding based on the Herglotz approach, constructing complex atoms
+    by generating two independent and orthogonal random vectors.
 
     Parameters:
-        num_atoms (int): The number of atoms (or frequency components) used in the encoding.
-        omega0 (float, optional): A scaling factor applied to the transformation. Default is 1.0.
-        seed (Optional[int], optional): Random seed for reproducibility of the atom generation. Default is None.
-        input_domain (str, optional): The domain of the input. Options are "s1", "s2", "r2", or "r3".
-                                      "s2" and "r3" are treated as 3-dimensional, while "s1" and "r2" are 2-dimensional.
-                                      Default is "s2".
+        num_atoms (int): Number of atoms to generate.
+        input_dim (int): Dimensionality of the input (must be at least 2).
+        bias (bool, optional): If True, uses learnable bias parameters. Defaults to True.
+        seed (Optional[int], optional): Seed for reproducibility.
+        omega0 (float, optional): Frequency factor used in the encoding. Defaults to 1.0.
 
     Attributes:
-        input_domain (str): The normalized input domain.
-        input_dim (int): The dimensionality of the input (2 or 3) derived from the input_domain.
-        num_atoms (int): Number of atoms used in the encoding.
-        A (torch.Tensor): Buffer containing generated complex atoms (shape: [num_atoms, input_dim]),
-                          where each atom is a complex vector.
-        omega0 (torch.Tensor): A scalar tensor holding the omega0 value.
-        w_real (nn.Parameter): Learnable parameter for the real part of the complex weights (shape: [num_atoms]).
-        w_imag (nn.Parameter): Learnable parameter for the imaginary part of the complex weights (shape: [num_atoms]).
-        bias_real (nn.Parameter): Learnable parameter for the real part of the bias (shape: [num_atoms]).
-        bias_imag (nn.Parameter): Learnable parameter for the imaginary part of the bias (shape: [num_atoms]).
+        A (torch.Tensor): Buffer containing the generated complex atoms.
+        omega0 (torch.Tensor): Buffer holding the frequency factor.
+        w_real (nn.Parameter): Learnable real part of the weights.
+        w_imag (nn.Parameter): Learnable imaginary part of the weights.
+        bias_real (nn.Parameter or buffer): Real part of the bias (learnable if bias is True).
+        bias_imag (nn.Parameter or buffer): Imaginary part of the bias (learnable if bias is True).
+
+    Methods:
+        generate_herglotz_vector() -> torch.Tensor:
+            Generates a complex vector (atom) for the encoding.
+        forward(x: torch.Tensor) -> torch.Tensor:
+            Computes the positional encoding for input tensor x.
+        extra_repr() -> str:
+            Returns a string representation of the module's parameters.
     """
 
     def __init__(
@@ -164,6 +182,20 @@ class HerglotzPE(PositionalEncoding):
 
 
 class IregularHerglotzPE(HerglotzPE):
+    """
+    Irregular Herglotz Positional Encoding.
+
+    An extension of HerglotzPE which create an PE where each atom can be decomposed as band limited Irregular Solid Harmonic Series.
+
+    Parameters:
+        Inherits all parameters from HerglotzPE.
+
+    Methods:
+        forward(x: torch.Tensor) -> torch.Tensor:
+            Computes the irregular positional encoding for input tensor x, including normalization.
+        extra_repr() -> str:
+            Returns a string representation of the module's parameters.
+    """
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
 
@@ -185,6 +217,29 @@ class IregularHerglotzPE(HerglotzPE):
 
 
 class FourierPE(PositionalEncoding):
+    """
+    Fourier Positional Encoding.
+
+    This module applies a learnable linear transformation to the input (via the Omega weight matrix) followed
+    by a sine activation scaled by a frequency factor omega0.
+
+    Parameters:
+        num_atoms (int): Number of output features (atoms).
+        input_dim (int): Dimensionality of the input.
+        bias (bool, optional): If True, the linear layer includes a bias term. Defaults to True.
+        seed (Optional[int], optional): Seed for reproducibility.
+        omega0 (float, optional): Frequency factor applied to the activation. Defaults to 1.0.
+
+    Attributes:
+        omega0 (torch.Tensor): Buffer holding the frequency factor.
+        Omega (nn.Linear): Linear layer mapping input_dim to num_atoms.
+
+    Methods:
+        forward(x: torch.Tensor) -> torch.Tensor:
+            Computes the Fourier positional encoding for input tensor x.
+        extra_repr() -> str:
+            Returns a string representation of the module's parameters.
+    """
 
     def __init__(
         self,

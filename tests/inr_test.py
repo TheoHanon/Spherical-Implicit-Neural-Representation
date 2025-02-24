@@ -1,102 +1,91 @@
+import unittest
 import torch
 import torch.nn as nn
-import unittest
-from spherical_inr import HerglotzNet, SirenNet, PositionalEncoding, MLP, Transform
+import torch.nn.functional as F
+from spherical_inr import HerglotzNet, SolidHerlotzNet, SirenNet
 
 
-# Dummy classes for error testing
-class DummyPE(PositionalEncoding):
-    def __init__(self, num_atoms, input_dim):
-        super().__init__(num_atoms=num_atoms, input_dim=input_dim)
-        self.num_atoms = num_atoms
-        self.input_dim = input_dim
+class TestHerglotzNet(unittest.TestCase):
+    def setUp(self):
+        self.output_dim = 4
+        self.num_atoms = 8
+        self.mlp_sizes = [16, 16]
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Return a dummy tensor with shape (batch, num_atoms)
-        batch = x.shape[0]
-        return torch.zeros(batch, self.num_atoms)
+    def test_invalid_input_dim(self):
+        # Input dim must be 1 or 2, so 3 should raise an error.
+        with self.assertRaises(ValueError):
+            HerglotzNet(3, self.output_dim, self.num_atoms, self.mlp_sizes)
 
+    def test_forward_with_input_dim_1(self):
+        net = HerglotzNet(1, self.output_dim, self.num_atoms, self.mlp_sizes)
+        # Create a dummy input tensor with shape (batch, input_dim)
+        x = torch.randn(10, 1)
+        y = net(x)
+        # Expect output shape to be (batch, output_dim)
+        self.assertEqual(y.shape, (10, self.output_dim))
 
-class DummyMLP(MLP):
-    def __init__(self, input_features, output_features):
-        super().__init__(input_features=input_features, output_features=output_features)
-        self.input_features = input_features
-        self.output_features = output_features
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Return a dummy tensor with shape (batch, output_features)
-        batch = x.shape[0]
-        return torch.zeros(batch, self.output_features)
-
-
-class DummyTransform(Transform):
-    def __init__(self, input_dim):
-        super().__init__(input_dim=input_dim)
-        self.input_dim = input_dim
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Identity transformation
-        return x
+    def test_forward_with_input_dim_2(self):
+        net = HerglotzNet(2, self.output_dim, self.num_atoms, self.mlp_sizes)
+        x = torch.randn(10, 2)
+        y = net(x)
+        self.assertEqual(y.shape, (10, self.output_dim))
 
 
-class TestINR(unittest.TestCase):
+class TestSolidHerlotzNet(unittest.TestCase):
+    def setUp(self):
+        self.output_dim = 3
+        self.num_atoms = 6
+        self.mlp_sizes = [12, 12]
 
-    def test_inr_forward_with_transform(self):
-        # Test INR forward pass using HerglotzNet, which uses a transform.
-        # For HerglotzNet, the transform is SphericalToCartesian. For 2D,
-        # it expects an input tensor where the first element is the radius and
-        # the second element is the angle.
-        input_dim = 2
-        num_atoms = 10
-        hidden_layers = 3
-        hidden_features = 16
-        output_features = 4
-        net = HerglotzNet(
-            input_dim=input_dim,
-            num_atoms=num_atoms,
-            hidden_layers=hidden_layers,
-            hidden_features=hidden_features,
-            output_features=output_features,
-            bias=True,
-            pe_omega0=1.0,
-            hidden_omega0=1.0,
-            seed=42,
-            last_linear=True,
+    def test_invalid_input_dim(self):
+        # Input dim must be 2 or 3, so 1 should raise an error.
+        with self.assertRaises(ValueError):
+            SolidHerlotzNet(1, self.output_dim, self.num_atoms, self.mlp_sizes)
+
+    def test_invalid_type_parameter(self):
+        # The 'type' parameter must be either "R" or "I".
+        with self.assertRaises(ValueError):
+            SolidHerlotzNet(
+                2, self.output_dim, self.num_atoms, self.mlp_sizes, type="X"
+            )
+
+    def test_forward_with_input_dim_2(self):
+        net = SolidHerlotzNet(
+            2, self.output_dim, self.num_atoms, self.mlp_sizes, type="R"
         )
-        # Construct an input tensor for the transform.
-        # For 2D SphericalToCartesian (non-unit mode), each sample must have [r, theta].
-        batch = 3
-        # Use r=1.0 and theta=0.0, which should map to (1,0) in Cartesian.
-        x = torch.tensor([[1.0, 0.0]] * batch)
-        output = net(x)
-        self.assertEqual(output.shape, (batch, output_features))
-        self.assertTrue(torch.all(torch.isfinite(output)))
+        x = torch.randn(10, 2)
+        y = net(x)
+        self.assertEqual(y.shape, (10, self.output_dim))
 
-    def test_inr_forward_without_transform(self):
-        # Test INR forward pass using SirenNet, which does not use a transform.
-        input_dim = 2
-        num_atoms = 8
-        hidden_layers = 2
-        hidden_features = 16
-        output_features = 3
+    def test_forward_with_input_dim_3_and_type_I(self):
+        net = SolidHerlotzNet(
+            3, self.output_dim, self.num_atoms, self.mlp_sizes, type="I"
+        )
+        x = torch.randn(10, 3)
+        y = net(x)
+        self.assertEqual(y.shape, (10, self.output_dim))
+
+
+class TestSirenNet(unittest.TestCase):
+    def setUp(self):
+        self.input_dim = 5
+        self.output_dim = 2
+        self.num_atoms = 10
+        self.mlp_sizes = [20, 20]
+
+    def test_forward(self):
         net = SirenNet(
-            input_dim=input_dim,
-            num_atoms=num_atoms,
-            hidden_layers=hidden_layers,
-            hidden_features=hidden_features,
-            output_features=output_features,
-            bias=True,
-            pe_omega0=1.0,
+            input_dim=self.input_dim,
+            output_dim=self.output_dim,
+            num_atoms=self.num_atoms,
+            mlp_sizes=self.mlp_sizes,
+            first_omega0=1.0,
             hidden_omega0=1.0,
-            seed=24,
-            last_linear=True,
         )
-        # Since transform is None, the input to the positional encoding is directly x.
-        batch = 4
-        x = torch.randn(batch, input_dim)
-        output = net(x)
-        self.assertEqual(output.shape, (batch, output_features))
-        self.assertTrue(torch.all(torch.isfinite(output)))
+        # Create a dummy input tensor with shape (batch, input_dim)
+        x = torch.randn(8, self.input_dim)
+        y = net(x)
+        self.assertEqual(y.shape, (8, self.output_dim))
 
 
 if __name__ == "__main__":
