@@ -1,76 +1,102 @@
-import unittest
 import torch
-from spherical_inr.inr import HerglotzNet
+import torch.nn as nn
+import unittest
+from spherical_inr import HerglotzNet, SirenNet, PositionalEncoding, MLP, Transform
 
 
-class TestHerglotzNet(unittest.TestCase):
-    def setUp(self):
-        # Parameters for the HerglotzNet
-        self.num_atoms = 16
-        self.hidden_layers = 2
-        self.hidden_features = 32
-        self.out_features = 8
-        self.batch_size = 4
-        # Dummy input tensor (shape here does not matter as we replace pe with DummyPE)
-        self.input_tensor = torch.randn(self.batch_size, 2)
+# Dummy classes for error testing
+class DummyPE(PositionalEncoding):
+    def __init__(self, num_atoms, input_dim):
+        super().__init__(num_atoms=num_atoms, input_dim=input_dim)
+        self.num_atoms = num_atoms
+        self.input_dim = input_dim
 
-    def test_forward_without_outermost_linear(self):
-        """
-        Test forward pass with sine activation after the last linear layer.
-        """
-        model = HerglotzNet(
-            num_atoms=self.num_atoms,
-            hidden_layers=self.hidden_layers,
-            hidden_features=self.hidden_features,
-            out_features=self.out_features,
-            outermost_linear=False,
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Return a dummy tensor with shape (batch, num_atoms)
+        batch = x.shape[0]
+        return torch.zeros(batch, self.num_atoms)
+
+
+class DummyMLP(MLP):
+    def __init__(self, input_features, output_features):
+        super().__init__(input_features=input_features, output_features=output_features)
+        self.input_features = input_features
+        self.output_features = output_features
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Return a dummy tensor with shape (batch, output_features)
+        batch = x.shape[0]
+        return torch.zeros(batch, self.output_features)
+
+
+class DummyTransform(Transform):
+    def __init__(self, input_dim):
+        super().__init__(input_dim=input_dim)
+        self.input_dim = input_dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Identity transformation
+        return x
+
+
+class TestINR(unittest.TestCase):
+
+    def test_inr_forward_with_transform(self):
+        # Test INR forward pass using HerglotzNet, which uses a transform.
+        # For HerglotzNet, the transform is SphericalToCartesian. For 2D,
+        # it expects an input tensor where the first element is the radius and
+        # the second element is the angle.
+        input_dim = 2
+        num_atoms = 10
+        hidden_layers = 3
+        hidden_features = 16
+        output_features = 4
+        net = HerglotzNet(
+            input_dim=input_dim,
+            num_atoms=num_atoms,
+            hidden_layers=hidden_layers,
+            hidden_features=hidden_features,
+            output_features=output_features,
+            bias=True,
+            pe_omega0=1.0,
+            hidden_omega0=1.0,
+            seed=42,
+            last_linear=True,
         )
+        # Construct an input tensor for the transform.
+        # For 2D SphericalToCartesian (non-unit mode), each sample must have [r, theta].
+        batch = 3
+        # Use r=1.0 and theta=0.0, which should map to (1,0) in Cartesian.
+        x = torch.tensor([[1.0, 0.0]] * batch)
+        output = net(x)
+        self.assertEqual(output.shape, (batch, output_features))
+        self.assertTrue(torch.all(torch.isfinite(output)))
 
-        output = model(self.input_tensor)
-        self.assertEqual(
-            output.shape,
-            (self.batch_size, self.out_features),
-            "Output shape should match (batch_size, out_features).",
+    def test_inr_forward_without_transform(self):
+        # Test INR forward pass using SirenNet, which does not use a transform.
+        input_dim = 2
+        num_atoms = 8
+        hidden_layers = 2
+        hidden_features = 16
+        output_features = 3
+        net = SirenNet(
+            input_dim=input_dim,
+            num_atoms=num_atoms,
+            hidden_layers=hidden_layers,
+            hidden_features=hidden_features,
+            output_features=output_features,
+            bias=True,
+            pe_omega0=1.0,
+            hidden_omega0=1.0,
+            seed=24,
+            last_linear=True,
         )
-
-    def test_forward_with_outermost_linear(self):
-        """
-        Test forward pass when the last layer is a plain linear layer (outermost_linear=True).
-        """
-        model = HerglotzNet(
-            num_atoms=self.num_atoms,
-            hidden_layers=self.hidden_layers,
-            hidden_features=self.hidden_features,
-            out_features=self.out_features,
-            outermost_linear=True,
-        )
-
-        output = model(self.input_tensor)
-        self.assertEqual(
-            output.shape,
-            (self.batch_size, self.out_features),
-            "Output shape should match (batch_size, out_features) when using outermost linear layer.",
-        )
-
-    def test_forward_numeric(self):
-        """
-        Ensure that the forward pass produces valid numeric values (not NaN or Inf).
-        """
-        model = HerglotzNet(
-            num_atoms=self.num_atoms,
-            hidden_layers=self.hidden_layers,
-            hidden_features=self.hidden_features,
-            out_features=self.out_features,
-            outermost_linear=False,
-        )
-
-        output = model(self.input_tensor)
-        self.assertFalse(
-            torch.isnan(output).any(), "Output should not contain NaN values."
-        )
-        self.assertFalse(
-            torch.isinf(output).any(), "Output should not contain Inf values."
-        )
+        # Since transform is None, the input to the positional encoding is directly x.
+        batch = 4
+        x = torch.randn(batch, input_dim)
+        output = net(x)
+        self.assertEqual(output.shape, (batch, output_features))
+        self.assertTrue(torch.all(torch.isfinite(output)))
 
 
 if __name__ == "__main__":
