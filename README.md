@@ -27,25 +27,25 @@ import torch
 import spherical_inr as sph 
 
 # Parameters for the HerglotzNet
+input_dim = 3
 num_atoms = 16
 hidden_layers = 2
 hidden_features = 32
-out_features = 8
+output_features = 8
 omega0 = 1.0
+unit_sphere = True
 seed = 42
-input_domain = "s2"  # Options: "s2", "s1", "r3", "r2"
-outermost_linear = True  # If False, a sine activation is applied after the last linear layer
 
 # Instantiate the network
 model = sph.HerglotzNet(
+    input_dim = input_dim
     num_atoms=num_atoms,
     hidden_layers=hidden_layers,
     hidden_features=hidden_features,
     out_features=out_features,
     omega0=omega0,
     seed=seed,
-    input_domain=input_domain,
-    outermost_linear=outermost_linear,
+    unit_sphere = unit_sphere
 )
 
 # Example input 
