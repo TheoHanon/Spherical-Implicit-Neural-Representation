@@ -1,73 +1,101 @@
-import math
-import torch
 import unittest
+import torch
+import math
 from spherical_inr import (
-    SphericalToCartesian,
+    rsph2_to_cart3,
+    sph2_to_cart3,
+    rsph1_to_cart2,
+    sph1_to_cart2,
 )
 
 
 class TestSphericalToCartesian(unittest.TestCase):
 
-    def test_invalid_dimension(self):
-        # Test that using an unsupported dimension raises a ValueError.
+    # Tests for rsph2_to_cart3: expects input with last dim == 3: [r, theta, phi]
+    def test_rsph2_to_cart3_valid(self):
+        # Single point test
+        # Use: r=1, theta=pi/2, phi=0 -> x = 1*sin(pi/2)*cos(0)=1, y = 1*sin(pi/2)*sin(0)=0, z = 1*cos(pi/2)=0
+        coords = torch.tensor([1.0, math.pi / 2, 0.0])
+        output = rsph2_to_cart3(coords)
+        expected = torch.tensor([1.0, 0.0, 0.0])
+        self.assertTrue(torch.allclose(output, expected, atol=1e-5))
+
+        # Batch test: two points
+        coords_batch = torch.tensor(
+            [[1.0, math.pi / 2, 0.0], [2.0, math.pi / 2, math.pi]]
+        )
+        output_batch = rsph2_to_cart3(coords_batch)
+        # For the second point: r=2, theta=pi/2, phi=pi -> x=2*sin(pi/2)*cos(pi)= -2, y=2*sin(pi/2)*sin(pi)≈0, z=2*cos(pi/2)=0
+        expected_batch = torch.tensor([[1.0, 0.0, 0.0], [-2.0, 0.0, 0.0]])
+        self.assertTrue(torch.allclose(output_batch, expected_batch, atol=1e-5))
+
+    def test_rsph2_to_cart3_invalid(self):
+        # Input with last dim not equal to 3 should raise a ValueError.
+        coords = torch.tensor([1.0, math.pi / 2])  # Only 2 elements.
         with self.assertRaises(ValueError):
-            _ = SphericalToCartesian(input_dim=4)
+            _ = rsph2_to_cart3(coords)
 
-    def test_forward_2d_non_unit(self):
-        # Test conversion for 2D with r provided in the input.
-        # Example: polar coordinates (r=2, theta=pi/2) should give approximately (0, 2)
-        transform = SphericalToCartesian(input_dim=2, unit=False)
-        # Create input tensor [r, theta]
-        x = torch.tensor([2.0, math.pi / 2])
-        output = transform.forward(x)
-        expected_x = 2.0 * math.cos(math.pi / 2)  # ~0
-        expected_y = 2.0 * math.sin(math.pi / 2)  # 2
-        expected = torch.tensor([expected_x, expected_y])
-        self.assertTrue(torch.allclose(output, expected, atol=1e-6))
+    # Tests for sph2_to_cart3: expects input with last dim == 2: [theta, phi] (unit sphere assumed)
+    def test_sph2_to_cart3_valid(self):
+        # Single point: theta=pi/2, phi=0 -> x = sin(pi/2)*cos(0)=1, y = sin(pi/2)*sin(0)=0, z = cos(pi/2)=0
+        coords = torch.tensor([math.pi / 2, 0.0])
+        output = sph2_to_cart3(coords)
+        expected = torch.tensor([1.0, 0.0, 0.0])
+        self.assertTrue(torch.allclose(output, expected, atol=1e-5))
 
-    def test_forward_3d_non_unit(self):
-        # Test conversion for 3D with r provided.
-        # Example: spherical coordinates (r=2, theta=pi/4, phi=pi/4)
-        transform = SphericalToCartesian(input_dim=3, unit=False)
-        x = torch.tensor([2.0, math.pi / 4, math.pi / 4])
-        # Expected conversion:
-        # x = r * sin(theta) * cos(phi)
-        # y = r * sin(theta) * sin(phi)
-        # z = r * cos(theta)
-        r = 2.0
-        theta = math.pi / 4
-        phi = math.pi / 4
-        expected_x = r * math.sin(theta) * math.cos(phi)
-        expected_y = r * math.sin(theta) * math.sin(phi)
-        expected_z = r * math.cos(theta)
-        expected = torch.tensor([expected_x, expected_y, expected_z])
-        output = transform.forward(x)
-        self.assertTrue(torch.allclose(output, expected, atol=1e-6))
+        # Batch test
+        coords_batch = torch.tensor([[math.pi / 2, 0.0], [math.pi / 2, math.pi]])
+        output_batch = sph2_to_cart3(coords_batch)
+        expected_batch = torch.tensor([[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]])
+        self.assertTrue(torch.allclose(output_batch, expected_batch, atol=1e-5))
 
-    def test_forward_2d_unit(self):
-        # Test conversion for 2D when unit flag is True.
-        # In this case, input contains only the angle.
-        transform = SphericalToCartesian(input_dim=2, unit=True)
-        # For an angle of pi/2, expected output is (cos(pi/2), sin(pi/2)) ~ (0, 1)
-        x = torch.tensor([math.pi / 2])
-        output = transform.forward(x)
-        expected = torch.tensor([math.cos(math.pi / 2), math.sin(math.pi / 2)])
-        self.assertTrue(torch.allclose(output, expected, atol=1e-6))
+    def test_sph2_to_cart3_invalid(self):
+        # Input with last dim not equal to 2 should raise a ValueError.
+        coords = torch.tensor([0.0, math.pi / 2, 0.0])  # 3 elements instead of 2.
+        with self.assertRaises(ValueError):
+            _ = sph2_to_cart3(coords)
 
-    def test_forward_3d_unit(self):
-        # Test conversion for 3D when unit flag is True.
-        # In this case, input contains only the angles [theta, phi].
-        transform = SphericalToCartesian(input_dim=3, unit=True)
-        theta = math.pi / 4
-        phi = math.pi / 4
-        x = torch.tensor([theta, phi])
-        # For unit sphere (r=1):
-        expected_x = math.sin(theta) * math.cos(phi)
-        expected_y = math.sin(theta) * math.sin(phi)
-        expected_z = math.cos(theta)
-        expected = torch.tensor([expected_x, expected_y, expected_z])
-        output = transform.forward(x)
-        self.assertTrue(torch.allclose(output, expected, atol=1e-6))
+    # Tests for rsph1_to_cart2: expects input with last dim == 2: [r, theta]
+    def test_rsph1_to_cart2_valid(self):
+        # Single point: r=2, theta=0 -> x = 2*cos(0)=2, y = 2*sin(0)=0.
+        coords = torch.tensor([2.0, 0.0])
+        output = rsph1_to_cart2(coords)
+        expected = torch.tensor([2.0, 0.0])
+        self.assertTrue(torch.allclose(output, expected, atol=1e-5))
+
+        # Batch test
+        coords_batch = torch.tensor([[2.0, 0.0], [3.0, math.pi / 2]])
+        output_batch = rsph1_to_cart2(coords_batch)
+        expected_batch = torch.tensor([[2.0, 0.0], [0.0, 3.0]])
+        self.assertTrue(torch.allclose(output_batch, expected_batch, atol=1e-5))
+
+    def test_rsph1_to_cart2_invalid(self):
+        # Input with last dim not equal to 2 should raise a ValueError.
+        coords = torch.tensor([1.0])  # Only one element.
+        with self.assertRaises(ValueError):
+            _ = rsph1_to_cart2(coords)
+
+    # Tests for sph1_to_cart2: expects input with last dim == 1: [theta]
+    def test_sph1_to_cart2_valid(self):
+        # Single point: theta=pi/2 -> x = cos(pi/2)=0, y = sin(pi/2)=1.
+        coords = torch.tensor([math.pi / 2])
+        output = sph1_to_cart2(coords)
+        expected = torch.tensor([0.0, 1.0])
+        self.assertTrue(torch.allclose(output, expected, atol=1e-5))
+
+        # Batch test: two angles.
+        coords_batch = torch.tensor([[0.0], [math.pi / 2]])
+        output_batch = sph1_to_cart2(coords_batch)
+        expected_batch = torch.tensor(
+            [[1.0, 0.0], [0.0, 1.0]]  # cos(0)=1, sin(0)=0  # cos(pi/2)=0, sin(pi/2)=1
+        )
+        self.assertTrue(torch.allclose(output_batch, expected_batch, atol=1e-5))
+
+    def test_sph1_to_cart2_invalid(self):
+        # Input with last dim not equal to 1 should raise a ValueError.
+        coords = torch.tensor([0.0, math.pi / 2])  # Two elements instead of one.
+        with self.assertRaises(ValueError):
+            _ = sph1_to_cart2(coords)
 
 
 if __name__ == "__main__":

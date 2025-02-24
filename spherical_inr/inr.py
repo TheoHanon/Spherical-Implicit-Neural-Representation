@@ -5,133 +5,155 @@ from .transforms import *
 from .positional_encoding import *
 from .mlp import *
 
-from typing import Optional, Type
+from typing import Optional, List
 
 
-class BaseINR(nn.Module):
+class HerglotzNet(nn.Module):
+    """
+    A neural network that combines a spherical-to-Cartesian transform,
+    a Herglotz positional encoding, and a sine-activated MLP.
+
+    Attributes:
+        input_dim (int): Dimensionality of the input (must be 1 or 2).
+        output_dim (int): Dimensionality of the output.
+        num_atoms (int): Number of atoms/features for encoding.
+        mlp_sizes (List[int]): List defining the hidden layer sizes of the MLP.
+        bias (bool): Whether to include bias in the layers.
+        omega0 (float): Frequency factor used in the sine activations.
+        seed (Optional[int]): Seed for reproducibility.
+    """
+
     def __init__(
         self,
         input_dim: int,
+        output_dim: int,
         num_atoms: int,
-        hidden_layers: int,
-        hidden_features: int,
-        output_features: int,
-        bias: bool,
-        pe_class: Type[PositionalEncoding],
-        transform: Optional[Transform],
-        pe_omega0: float,
-        hidden_omega0: float,
-        seed: Optional[int],
-        last_linear: bool,
+        mlp_sizes: List[int],
+        bias: bool = True,
+        omega0: float = 1.0,
+        seed: Optional[int] = None,
     ) -> None:
 
-        super().__init__()
+        if input_dim not in (1, 2):
+            raise ValueError("The input dimension must be 1 or 2.")
 
-        self.transform = transform
-        self.pe = pe_class(
+        super(HerglotzNet, self).__init__()
+
+        self.transform = sph2_to_cart3 if input_dim == 2 else sph1_to_cart2
+
+        self.pe = HerglotzPE(
             num_atoms=num_atoms,
-            input_dim=input_dim,
+            input_dim=input_dim + 1,
             bias=bias,
+            omega0=omega0,
             seed=seed,
-            omega0=pe_omega0,
         )
+
         self.mlp = SineMLP(
             input_features=num_atoms,
-            output_features=output_features,
-            hidden_features=hidden_features,
-            hidden_layers=hidden_layers,
+            output_features=output_dim,
+            hidden_sizes=mlp_sizes,
             bias=bias,
-            omega0=hidden_omega0,
-            last_linear=last_linear,
+            omega0=omega0,
         )
-        self.inr = self.build_inr(self.pe, self.mlp, self.transform)
-
-    def build_inr(
-        self,
-        pe: PositionalEncoding,
-        mlp: SineMLP,
-        transform: Optional[Transform] = None,
-    ) -> nn.Sequential:
-
-        if pe.num_atoms != mlp.input_features:
-            raise ValueError(
-                "Number of atoms in PE must match the input features of the MLP."
-            )
-
-        if transform is not None:
-            if transform.input_dim != pe.input_dim:
-                raise ValueError(
-                    "Dimension of the transform must match the dimension of the PE."
-                )
-            return nn.Sequential(transform, pe, mlp)
-        else:
-            return nn.Sequential(pe, mlp)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.inr(x)
+
+        x = self.transform(x)
+        x = self.pe(x)
+        x = self.mlp(x)
+
+        return x
 
 
-class HerglotzNet(BaseINR):
-
-    def __init__(
-        self,
-        input_dim: int,
-        num_atoms: int,
-        hidden_layers: int,
-        hidden_features: int,
-        output_features: int,
-        bias: bool = True,
-        pe_omega0: float = 1.0,
-        hidden_omega0: float = 1.0,
-        seed: Optional[int] = None,
-        last_linear: bool = True,
-        unit_sphere: bool = True,
-    ) -> None:
-
-        transform = SphericalToCartesian(input_dim, unit=unit_sphere)
-        super().__init__(
-            input_dim=input_dim,
-            num_atoms=num_atoms,
-            hidden_layers=hidden_layers,
-            hidden_features=hidden_features,
-            output_features=output_features,
-            bias=bias,
-            pe_class=HerglotzPE,
-            transform=transform,
-            pe_omega0=pe_omega0,
-            hidden_omega0=hidden_omega0,
-            seed=seed,
-            last_linear=last_linear,
-        )
-
-
-class SirenNet(BaseINR):
+class SolidHerlotzNet(nn.Module):
 
     def __init__(
         self,
         input_dim: int,
+        output_dim: int,
         num_atoms: int,
-        hidden_layers: int,
-        hidden_features: int,
-        output_features: int,
+        mlp_sizes: List[int],
         bias: bool = True,
-        pe_omega0: float = 1.0,
-        hidden_omega0: float = 1.0,
+        omega0: float = 1.0,
+        type: str = "R",
         seed: Optional[int] = None,
-        last_linear: bool = True,
     ) -> None:
 
-        super(SirenNet, self).__init__(
-            input_dim=input_dim,
-            num_atoms=num_atoms,
-            hidden_layers=hidden_layers,
-            hidden_features=hidden_features,
-            output_features=output_features,
+        if input_dim not in (2, 3):
+            raise ValueError("The input dimension must be 2 or 3.")
+
+        super(SolidHerlotzNet, self).__init__()
+
+        self.transform = rsph2_to_cart3 if input_dim == 3 else rsph1_to_cart2
+
+        if type == "R":
+            self.pe = HerglotzPE(
+                num_atoms=num_atoms,
+                input_dim=input_dim,
+                bias=bias,
+                omega0=omega0,
+                seed=seed,
+            )
+        elif type == "I":
+            self.pe = IregularHerglotzPE(
+                num_atoms=num_atoms,
+                input_dim=input_dim,
+                bias=bias,
+                omega0=omega0,
+                seed=seed,
+            )
+        else:
+            raise ValueError("Invalid type. Must be 'R' or 'I'.")
+
+        self.mlp = SineMLP(
+            input_features=num_atoms,
+            output_features=output_dim,
+            hidden_sizes=mlp_sizes,
             bias=bias,
-            pe_class=FourierPE,
-            transform=None,
-            pe_omega0=pe_omega0,
-            hidden_omega0=hidden_omega0,
-            seed=seed,
-            last_linear=last_linear,
+            omega0=omega0,
         )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+
+        x = self.transform(x)
+        x = self.pe(x)
+        x = self.mlp(x)
+
+        return x
+
+
+class SirenNet(nn.Module):
+
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int,
+        num_atoms: int,
+        mlp_sizes: List[int],
+        bias: bool = True,
+        first_omega0: float = 1.0,
+        hidden_omega0: float = 1.0,
+        seed: Optional[int] = None,
+    ) -> None:
+
+        super(SirenNet, self).__init__()
+
+        self.pe = FourierPE(
+            num_atoms=num_atoms, input_dim=input_dim, bias=bias, omega0=first_omega0
+        )
+
+        self.mlp = SineMLP(
+            input_features=num_atoms,
+            output_features=output_dim,
+            hidden_sizes=mlp_sizes,
+            bias=bias,
+            omega0=hidden_omega0,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+
+        x = self.pe(x)
+        x = self.mlp(x)
+
+        return x

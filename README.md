@@ -20,36 +20,70 @@ pip install -e .
 
 ## Getting Started
 
+### Instantiate a Network
+
 Below is an example of how to instantiate and use the `HerglotzNet` module:
 
 ```python
 import torch
 import spherical_inr as sph 
 
-# Parameters for the HerglotzNet
+# Parameters for HerglotzNet
+input_dim = 2         # must be 1 or 2 for HerglotzNet
+output_dim = 8
 num_atoms = 16
-hidden_layers = 2
-hidden_features = 32
-out_features = 8
+mlp_sizes = 3*[32]  # hidden layer sizes
 omega0 = 1.0
 seed = 42
-input_domain = "s2"  # Options: "s2", "s1", "r3", "r2"
-outermost_linear = True  # If False, a sine activation is applied after the last linear layer
 
 # Instantiate the network
 model = sph.HerglotzNet(
+    input_dim=input_dim,
+    output_dim=output_dim,
     num_atoms=num_atoms,
-    hidden_layers=hidden_layers,
-    hidden_features=hidden_features,
-    out_features=out_features,
+    mlp_sizes=mlp_sizes,
+    bias=True,
     omega0=omega0,
-    seed=seed,
-    input_domain=input_domain,
-    outermost_linear=outermost_linear,
+    seed=seed
 )
 
-# Example input 
-dummy_input = torch.randn(4, 3)  
+# Example input (for input_dim=2)
+dummy_input = torch.randn(4, input_dim)
+output = model(dummy_input)
+print(output)
+```
+
+### Instantiate and Use a Positional Encoding
+
+You can also directly instantiate a positional encoding and use it in your own torch model:
+
+```python
+import torch
+import torch.nn as nn
+import spherical_inr as sph 
+
+# Instantiate Herglotz positional encoding (input_dim must be at least 2)
+pe = sph.HerglotzPE(
+    num_atoms=16,
+    input_dim=3,
+    bias=True,
+    omega0=1.0,
+    seed=42
+)
+
+# Example model using the positional encoding
+class MyModel(nn.Module):
+    def __init__(self, pe):
+        super().__init__()
+        self.pe = pe
+        self.linear = nn.Linear(16, 8)
+        
+    def forward(self, x):
+        x = self.pe(x)
+        return self.linear(x)
+
+model = MyModel(pe)
+dummy_input = torch.randn(4, 3)
 output = model(dummy_input)
 print(output)
 ```
