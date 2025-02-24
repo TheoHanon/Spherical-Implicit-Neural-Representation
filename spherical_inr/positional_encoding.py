@@ -1,11 +1,37 @@
 import torch
 import torch.nn as nn
-from .transforms import sph2_to_cart3, sph1_to_cart2
-from typing import Optional, Union
+
+from typing import Optional
+from abc import ABC, abstractmethod
 
 
-class HerglotzPE(nn.Module):
+class PositionalEncoding(ABC, nn.Module):
+
+    def __init__(
+        self, num_atoms: int, input_dim: int, seed: Optional[int] = None
+    ) -> None:
+        super(PositionalEncoding, self).__init__()
+        self.num_atoms = num_atoms
+        self.input_dim = input_dim
+
+        self.gen: Optional[torch.Generator] = None
+
+        if seed is not None:
+            self.gen = torch.Generator()
+            self.gen.manual_seed(seed)
+
+    @abstractmethod
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        pass
+
+    def extra_repr(self) -> str:
+        return f"num_atoms={self.num_atoms}, " f"input_dim={self.input_dim}"
+
+
+class HerglotzPE(PositionalEncoding):
     """
+    DEPRECIATED DESCRIPTION:
+
     HerglotzPE Positional Encoding Module
 
     This module implements a positional encoding based on Herglotz functions. It is designed to
@@ -37,56 +63,54 @@ class HerglotzPE(nn.Module):
     def __init__(
         self,
         num_atoms: int,
-        omega0: float = 1.0,
+        input_dim: int,
+        bias: bool = True,
         seed: Optional[int] = None,
-        input_domain: str = "s2",
+        omega0: float = 1.0,
     ) -> None:
 
-        super(HerglotzPE, self).__init__()
+        if input_dim < 2:
+            raise ValueError("The dimension must be at least 2.")
 
-        self.input_domain = input_domain.lower()
-
-        if self.input_domain in ["s2", "r3"]:
-            self.input_dim = 3
-        elif self.input_domain in ["s1", "r2"]:
-            self.input_dim = 2
-        else:
-            raise ValueError(f"Unknown input domain: {input_domain}")
-
-        self.num_atoms = num_atoms
-
-        gen: Optional[torch.Generator] = None
-        if seed is not None:
-            gen = torch.Generator()
-            gen.manual_seed(seed)
+        super(HerglotzPE, self).__init__(
+            num_atoms=num_atoms, input_dim=input_dim, seed=seed
+        )
 
         A = torch.stack(
-            [
-                self.generate_herglotz_vector(dim=self.input_dim, generator=gen)
-                for i in range(self.num_atoms)
-            ],
+            [self.generate_herglotz_vector() for i in range(self.num_atoms)],
             dim=0,
         )
+
         self.register_buffer("A", A)
         self.register_buffer("omega0", torch.tensor(omega0, dtype=torch.float32))
 
-        bound = 1 / self.input_dim
         self.w_real = nn.Parameter(
             torch.empty(self.num_atoms, dtype=torch.float32).uniform_(
-                -bound, bound, generator=gen
+                -1 / self.input_dim, 1 / self.input_dim, generator=self.gen
             )
         )
         self.w_imag = nn.Parameter(
             torch.empty(self.num_atoms, dtype=torch.float32).uniform_(
-                -bound, bound, generator=gen
+                -1 / self.input_dim, 1 / self.input_dim, generator=self.gen
             )
         )
-        self.bias_real = nn.Parameter(torch.zeros(self.num_atoms, dtype=torch.float32))
-        self.bias_imag = nn.Parameter(torch.zeros(self.num_atoms, dtype=torch.float32))
 
-    def generate_herglotz_vector(
-        self, dim: int, generator: Optional[torch.Generator] = None
-    ) -> torch.Tensor:
+        if bias is True:
+            self.bias_real = nn.Parameter(
+                torch.zeros(self.num_atoms, dtype=torch.float32)
+            )
+            self.bias_imag = nn.Parameter(
+                torch.zeros(self.num_atoms, dtype=torch.float32)
+            )
+        else:
+            self.register_buffer(
+                "bias_real", torch.zeros(self.num_atoms, dtype=torch.float32)
+            )
+            self.register_buffer(
+                "bias_imag", torch.zeros(self.num_atoms, dtype=torch.float32)
+            )
+
+    def generate_herglotz_vector(self) -> torch.Tensor:
         """
         Generates a complex vector (atom) for the Herglotz encoding.
 
@@ -94,18 +118,16 @@ class HerglotzPE(nn.Module):
         normalizing them, and ensuring the imaginary part is orthogonal to the real part.
 
         Parameters:
-            dim (int): The dimension of the vector (2 or 3).
+            input_dim (int): The dimension of the vector (2 or 3).
             generator (Optional[torch.Generator]): A random number generator for reproducibility. Default is None.
 
         Returns:
             torch.Tensor: A complex tensor representing the atom (dtype=torch.complex64).
         """
-        if dim not in (2, 3):
-            raise ValueError(f"Unsupported dimension: {dim}")
 
-        a_R = torch.randn(dim, dtype=torch.float32, generator=generator)
+        a_R = torch.randn(self.input_dim, dtype=torch.float32, generator=self.gen)
         a_R /= (2**0.5) * torch.norm(a_R)
-        a_I = torch.randn(dim, dtype=torch.float32, generator=generator)
+        a_I = torch.randn(self.input_dim, dtype=torch.float32, generator=self.gen)
         a_I -= 2 * torch.dot(a_I, a_R) * a_R  # Orthogonalize a_I with respect to a_R
         a_I /= (2**0.5) * torch.norm(a_I)
 
@@ -125,10 +147,6 @@ class HerglotzPE(nn.Module):
         Returns:
             torch.Tensor: The encoded output tensor.
         """
-        if self.input_domain == "s2":
-            x = sph2_to_cart3(x)
-        elif self.input_domain == "s1":
-            x = sph1_to_cart2(x)
 
         x = x.to(self.A.dtype)
         x = torch.matmul(x, self.A.t())
@@ -141,9 +159,55 @@ class HerglotzPE(nn.Module):
         return torch.exp(-x.imag) * torch.cos(x.real)
 
     def extra_repr(self) -> str:
-        return (
-            f"num_atoms={self.num_atoms}, "
-            f"omega0={self.omega0.item():.3f}, "
-            f"input_domain='{self.input_domain}', "
-            f"input_dim={self.input_dim}"
+        repr = super().extra_repr()
+        return repr + f", omega0={self.omega0.item()}"
+
+
+class IregularHerglotzPE(HerglotzPE):
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+
+        x = x.to(self.A.dtype)
+
+        r = torch.norm(x, dim=-1, keepdim=True)
+        x = torch.matmul(x, self.A.t())
+
+        x = self.omega0 * (
+            (self.w_real + 1j * self.w_imag) * (x / (r * r))
+            + (self.bias_real + 1j * self.bias_imag)
         )
+
+        return 1 / r * torch.exp(-x.imag) * torch.cos(x.real)
+
+    def extra_repr(self) -> str:
+        repr = super().extra_repr()
+        return repr + f", omega0={self.omega0.item()}"
+
+
+class FourierPE(PositionalEncoding):
+
+    def __init__(
+        self,
+        num_atoms: int,
+        input_dim: int,
+        bias: bool = True,
+        seed: Optional[int] = None,
+        omega0: float = 1.0,
+    ) -> None:
+
+        super(FourierPE, self).__init__(
+            num_atoms=num_atoms, input_dim=input_dim, seed=seed
+        )
+        self.register_buffer("omega0", torch.tensor(omega0, dtype=torch.float32))
+        self.Omega = nn.Linear(self.input_dim, self.num_atoms, bias)
+
+        with torch.no_grad():
+            self.Omega.weight.uniform_(-1 / self.input_dim, 1 / self.input_dim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.Omega(x)
+        return torch.sin(self.omega0 * x)
+
+    def extra_repr(self) -> str:
+        repr = super().extra_repr()
+        return repr + f", omega0={self.omega0.item()}"

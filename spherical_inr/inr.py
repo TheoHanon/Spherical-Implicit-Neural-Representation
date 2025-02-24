@@ -1,108 +1,137 @@
 import torch
 import torch.nn as nn
-from typing import Optional
-from .positional_encoding import HerglotzPE
-from .activations import Sin
-import math
+
+from .transforms import *
+from .positional_encoding import *
+from .mlp import *
+
+from typing import Optional, Type
 
 
-class HerglotzNet(nn.Module):
-    """
-    HerglotzNet Neural Network Module
-
-    This network consists of a Herglotz-based positional encoding layer followed by a sequence of
-    linear layers interleaved with sine activations. The final layer can be configured to either
-    output a linear transformation or a sine-activated transformation.
-
-    Parameters:
-        num_atoms (int): Number of atoms used in the Herglotz positional encoding.
-        hidden_layers (int): Number of hidden layers to use after the initial linear layer.
-        hidden_features (int): Number of features (neurons) in each hidden layer.
-        out_features (int): Number of output features.
-        omega0 (float, optional): Scaling factor for the positional encoding. Default is 1.0.
-        seed (Optional[int], optional): Seed for random number generation to ensure reproducibility.
-        input_domain (str, optional): Domain of the input. Accepts "s2", "s1", "r3", or "r2". Default is "s2".
-        outermost_linear (bool, optional): If True, the final layer is a linear transformation only.
-                                           If False, a sine activation is applied after the final linear transformation.
-                                           Default is False.
-
-    Attributes:
-        pe (HerglotzPE): The Herglotz-based positional encoding layer.
-        hidden_layers (nn.ModuleList): A list of hidden linear layers.
-        last_layer (nn.Module): The final layer, which is either a linear layer or a sequential module
-                                applying a linear transformation followed by a sine activation.
-    """
-
+class BaseINR(nn.Module):
     def __init__(
         self,
+        input_dim: int,
         num_atoms: int,
         hidden_layers: int,
         hidden_features: int,
-        out_features: int,
-        bias: bool = True,
-        omega0: float = 1.0,
-        seed: Optional[int] = None,
-        input_domain: str = "s2",
-        outermost_linear: bool = True,
+        output_features: int,
+        bias: bool,
+        pe_class: Type[PositionalEncoding],
+        transform: Optional[Transform],
+        pe_omega0: float,
+        hidden_omega0: float,
+        seed: Optional[int],
+        last_linear: bool,
     ) -> None:
 
-        super(HerglotzNet, self).__init__()
+        super().__init__()
 
-        self.pe = HerglotzPE(num_atoms, omega0, seed, input_domain)
-        self.hidden_layers = nn.ModuleList()
-
-        self.hidden_layers.append(nn.Linear(num_atoms, hidden_features, bias))
-
-        for _ in range(hidden_layers):
-            self.hidden_layers.append(nn.Linear(hidden_features, hidden_features, bias))
-
-        if outermost_linear:
-            self.last_layer = nn.Linear(hidden_features, out_features, bias)
-        else:
-            self.last_layer = nn.Sequential(
-                nn.Linear(hidden_features, out_features, bias), Sin()
-            )
-        self.init_weights()
-
-    def init_weights(self) -> None:
-        """
-        Initialize the weights of the network as SIREN."""
-
-        last_layer = (
-            self.last_layer
-            if isinstance(self.last_layer, nn.Linear)
-            else self.last_layer[0]
+        self.transform = transform
+        self.pe = pe_class(
+            num_atoms=num_atoms,
+            input_dim=input_dim,
+            bias=bias,
+            seed=seed,
+            omega0=pe_omega0,
         )
+        self.mlp = SineMLP(
+            input_features=num_atoms,
+            output_features=output_features,
+            hidden_features=hidden_features,
+            hidden_layers=hidden_layers,
+            bias=bias,
+            omega0=hidden_omega0,
+            last_linear=last_linear,
+        )
+        self.inr = self.build_inr(self.pe, self.mlp, self.transform)
 
-        for layer in [*self.hidden_layers, last_layer]:
-            fan_in = layer.weight.size(1)
-            bound = math.sqrt(6 / fan_in)
-            nn.init.uniform_(layer.weight, -bound, bound)
-            if layer.bias is not None:
-                nn.init.constant_(layer.bias, 0)
+    def build_inr(
+        self,
+        pe: PositionalEncoding,
+        mlp: SineMLP,
+        transform: Optional[Transform] = None,
+    ) -> nn.Sequential:
+
+        if pe.num_atoms != mlp.input_features:
+            raise ValueError(
+                "Number of atoms in PE must match the input features of the MLP."
+            )
+
+        if transform is not None:
+            if transform.input_dim != pe.input_dim:
+                raise ValueError(
+                    "Dimension of the transform must match the dimension of the PE."
+                )
+            return nn.Sequential(transform, pe, mlp)
+        else:
+            return nn.Sequential(pe, mlp)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass of the HerglotzNet.
+        return self.inr(x)
 
-        The input x is first encoded using the Herglotz positional encoding.
-        It is then passed through a sequence of hidden layers, where each hidden layer applies a linear
-        transformation followed by a sine activation. Finally, the result is processed by the last layer,
-        which may or may not include an additional sine activation based on the configuration.
 
-        Parameters:
-            x (torch.Tensor): Input tensor. Its shape should be compatible with the positional encoding layer.
+class HerglotzNet(BaseINR):
 
-        Returns:
-            torch.Tensor: The output of the network.
-        """
+    def __init__(
+        self,
+        input_dim: int,
+        num_atoms: int,
+        hidden_layers: int,
+        hidden_features: int,
+        output_features: int,
+        bias: bool = True,
+        pe_omega0: float = 1.0,
+        hidden_omega0: float = 1.0,
+        seed: Optional[int] = None,
+        last_linear: bool = True,
+        unit_sphere: bool = True,
+    ) -> None:
 
-        x = self.pe(x)
+        transform = SphericalToCartesian(input_dim, unit=unit_sphere)
+        super().__init__(
+            input_dim=input_dim,
+            num_atoms=num_atoms,
+            hidden_layers=hidden_layers,
+            hidden_features=hidden_features,
+            output_features=output_features,
+            bias=bias,
+            pe_class=HerglotzPE,
+            transform=transform,
+            pe_omega0=pe_omega0,
+            hidden_omega0=hidden_omega0,
+            seed=seed,
+            last_linear=last_linear,
+        )
 
-        for layer in self.hidden_layers:
-            x = layer(x)
-            x = torch.sin(x)
 
-        x = self.last_layer(x)
+class SirenNet(BaseINR):
 
-        return x
+    def __init__(
+        self,
+        input_dim: int,
+        num_atoms: int,
+        hidden_layers: int,
+        hidden_features: int,
+        output_features: int,
+        bias: bool = True,
+        pe_omega0: float = 1.0,
+        hidden_omega0: float = 1.0,
+        seed: Optional[int] = None,
+        last_linear: bool = True,
+    ) -> None:
+
+        super(SirenNet, self).__init__(
+            input_dim=input_dim,
+            num_atoms=num_atoms,
+            hidden_layers=hidden_layers,
+            hidden_features=hidden_features,
+            output_features=output_features,
+            bias=bias,
+            pe_class=FourierPE,
+            transform=None,
+            pe_omega0=pe_omega0,
+            hidden_omega0=hidden_omega0,
+            seed=seed,
+            last_linear=last_linear,
+        )

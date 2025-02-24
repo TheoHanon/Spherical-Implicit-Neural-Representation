@@ -12,9 +12,10 @@ Modules:
     transforms: Coordinate transformation utilities.
 """
 
-__version__ = "0.1.4"
+__version__ = "0.2.0"
 
-from .activations import *
+
 from .inr import *
 from .positional_encoding import *
 from .transforms import *
+from .mlp import *
