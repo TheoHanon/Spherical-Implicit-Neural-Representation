@@ -28,12 +28,14 @@ Below is an example of how to instantiate and use the `HerglotzNet` module:
 import torch
 import spherical_inr as sph 
 
+
 # Parameters for HerglotzNet
 input_dim = 2         # must be 1 or 2 for HerglotzNet
 output_dim = 8
 num_atoms = 16
 mlp_sizes = 3*[32]  # hidden layer sizes
 omega0 = 1.0
+unit_sphere = True
 seed = 42
 
 # Instantiate the network
