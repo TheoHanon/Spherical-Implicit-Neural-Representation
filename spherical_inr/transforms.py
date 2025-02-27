@@ -1,7 +1,7 @@
 import torch
 
 
-def rsph2_to_cart3(sph2_coords: torch.Tensor) -> torch.Tensor:
+def rsph2_to_cart3(rsph2_coords: torch.Tensor) -> torch.Tensor:
     """
     Converts spherical coordinates [r, theta, phi] to 3d Cartesian coordinates [x, y, z].
 
@@ -18,10 +18,10 @@ def rsph2_to_cart3(sph2_coords: torch.Tensor) -> torch.Tensor:
       ValueError: If the last dimension of spherical_coords is not 2.
     """
 
-    if sph2_coords.shape[-1] != 3:
+    if rsph2_coords.shape[-1] != 3:
         raise ValueError("The last dimension of spherical_coords must be 3.")
 
-    r, theta, phi = sph2_coords.unbind(dim=-1)
+    r, theta, phi = rsph2_coords.unbind(dim=-1)
 
     sin_theta = torch.sin(theta)
     x = r * sin_theta * torch.cos(phi)
@@ -61,7 +61,7 @@ def sph2_to_cart3(sph2_coords: torch.Tensor) -> torch.Tensor:
     return torch.stack([x, y, z], dim=-1)
 
 
-def rsph1_to_cart2(sph1_coords: torch.Tensor) -> torch.Tensor:
+def rsph1_to_cart2(rsph1_coords: torch.Tensor) -> torch.Tensor:
     """
     Converts angular coordinates [r, theta] to 2d Cartesian coordinates [x, y].
 
@@ -77,10 +77,10 @@ def rsph1_to_cart2(sph1_coords: torch.Tensor) -> torch.Tensor:
       ValueError: If the last dimension of spherical_coords is not 1.
     """
 
-    if sph1_coords.shape[-1] != 2:
+    if rsph1_coords.shape[-1] != 2:
         raise ValueError("The last dimension of spherical_coords must be 2.")
 
-    r, theta = sph1_coords.unbind(dim=-1)
+    r, theta = rsph1_coords.unbind(dim=-1)
 
     x = r * torch.cos(theta)
     y = r * torch.sin(theta)

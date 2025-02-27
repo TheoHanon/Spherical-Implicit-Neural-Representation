@@ -47,9 +47,9 @@ class PositionalEncoding(ABC, nn.Module):
         return f"num_atoms={self.num_atoms}, " f"input_dim={self.input_dim}"
 
 
-class HerglotzPE(PositionalEncoding):
+class RegularHerglotzPE(PositionalEncoding):
     """
-    Herglotz Positional Encoding.
+    Regular Herglotz Positional Encoding.
 
     This module generates a positional encoding based on the Herglotz approach, constructing complex atoms
     by generating two independent and orthogonal random vectors.
@@ -87,15 +87,14 @@ class HerglotzPE(PositionalEncoding):
         omega0: float = 1.0,
     ) -> None:
 
-        if input_dim < 2:
-            raise ValueError("The dimension must be at least 2.")
-
-        super(HerglotzPE, self).__init__(
+        super(RegularHerglotzPE, self).__init__(
             num_atoms=num_atoms, input_dim=input_dim, seed=seed
         )
+        if input_dim < 2:
+            raise ValueError("Input dimension must be at least 2.")
 
         A = torch.stack(
-            [self.generate_herglotz_vector() for i in range(self.num_atoms)],
+            [self.__generate_herglotz_vector() for i in range(self.num_atoms)],
             dim=0,
         )
 
@@ -128,7 +127,7 @@ class HerglotzPE(PositionalEncoding):
                 "bias_imag", torch.zeros(self.num_atoms, dtype=torch.float32)
             )
 
-    def generate_herglotz_vector(self) -> torch.Tensor:
+    def __generate_herglotz_vector(self) -> torch.Tensor:
         """
         Generates a complex vector (atom) for the Herglotz encoding.
 
@@ -181,7 +180,7 @@ class HerglotzPE(PositionalEncoding):
         return repr + f", omega0={self.omega0.item()}"
 
 
-class IregularHerglotzPE(HerglotzPE):
+class IregularHerglotzPE(RegularHerglotzPE):
     """
     Irregular Herglotz Positional Encoding.
 

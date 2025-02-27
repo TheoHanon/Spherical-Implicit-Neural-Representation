@@ -41,7 +41,7 @@ class HerglotzNet(nn.Module):
 
         self.transform = sph2_to_cart3 if input_dim == 2 else sph1_to_cart2
 
-        self.pe = HerglotzPE(
+        self.pe = RegularHerglotzPE(
             num_atoms=num_atoms,
             input_dim=input_dim + 1,
             bias=bias,
@@ -88,7 +88,7 @@ class SolidHerlotzNet(nn.Module):
         self.transform = rsph2_to_cart3 if input_dim == 3 else rsph1_to_cart2
 
         if type == "R":
-            self.pe = HerglotzPE(
+            self.pe = RegularHerglotzPE(
                 num_atoms=num_atoms,
                 input_dim=input_dim,
                 bias=bias,
