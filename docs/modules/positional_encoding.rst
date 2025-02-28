@@ -5,3 +5,4 @@ positional_encoding modules
     :members:
     :undoc-members:
     :no-index:
+    :show-inheritance:

@@ -4,3 +4,4 @@ mlp modules
     :members:
     :undoc-members:
     :no-index:
+    :show-inheritance:
