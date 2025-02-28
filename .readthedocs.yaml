@@ -11,6 +11,9 @@ build:
     python: "3.13"
 
 # Build documentation in the "docs/" directory with Sphinx
+python :
+  install:
+    - requirements: docs/requirements.txt
 sphinx:
    configuration: docs/conf.py
 
