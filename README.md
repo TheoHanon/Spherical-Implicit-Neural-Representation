@@ -1,4 +1,5 @@
 # Spherical-Implicit-Neural-Representation
+[![Documentation Status](https://readthedocs.org/projects/spherical-implicit-neural-representation/badge/?version=latest)](https://spherical-implicit-neural-representation.readthedocs.io/en/latest/)
 
 *Spherical-Implicit-Neural-Representation* is a Python package for constructing spherical implicit neural representations using Herglotz-based positional encoding. It provides flexible modules for processing spherical data along with customizable positional encoding layers and regularization tools.
 
@@ -146,4 +147,3 @@ print(output)
    [arXiv:2502.13777](https://arxiv.org/abs/2502.13777)
 
    
-[![Documentation Status](https://readthedocs.org/projects/spherical-implicit-neural-representation/badge/?version=latest)](https://spherical-implicit-neural-representation.readthedocs.io/en/latest/)
