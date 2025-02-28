@@ -81,5 +81,3 @@ uvicorn==0.34.0
 watchfiles==1.0.4
 wcwidth==0.2.13
 websockets==15.0
-sphinx
-sphinx-rtd-theme
