@@ -3,6 +3,8 @@ import torch.nn as nn
 
 from collections import OrderedDict
 
+__all__ = ["get_activation"]
+
 
 class Sin(nn.Module):
 

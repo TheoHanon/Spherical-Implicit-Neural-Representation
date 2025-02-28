@@ -5,6 +5,13 @@ from collections import OrderedDict
 from typing import Optional
 from abc import ABC, abstractmethod
 
+__all__ = [
+    "RegularHerglotzPE",
+    "IregularHerglotzPE",
+    "FourierPE",
+    "get_positional_encoding",
+]
+
 
 class _PositionalEncoding(ABC, nn.Module):
     """
