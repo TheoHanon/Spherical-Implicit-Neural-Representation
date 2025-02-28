@@ -33,9 +33,9 @@ output_dim = 1
 inr_sizes = [16] + 3 * [32]  # [PE size] + (hidden layers * hidden features)
 omega0 = 1.0
 seed = 42
-input_dim = 2  # For (θ, φ) coordinates
 
-# Instantiate the network
+
+# Instantiate the network NOTE : # HNET is defined for (θ, φ) coordinates only
 model = sph.HerglotzNet(
     output_dim=output_dim,
     inr_sizes=inr_sizes,
@@ -44,8 +44,8 @@ model = sph.HerglotzNet(
     seed=seed
 )
 
-# Example input (for input_dim=2)
-dummy_input = torch.randn(4, input_dim)
+# Example
+dummy_input = torch.randn(4, 2)
 output = model(dummy_input)
 print(output)
 ```
