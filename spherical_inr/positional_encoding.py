@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
+from collections import OrderedDict
 
 from typing import Optional
 from abc import ABC, abstractmethod
 
 
-class PositionalEncoding(ABC, nn.Module):
+class _PositionalEncoding(ABC, nn.Module):
     """
     Abstract base class for positional encoding modules.
 
@@ -29,7 +30,7 @@ class PositionalEncoding(ABC, nn.Module):
     def __init__(
         self, num_atoms: int, input_dim: int, seed: Optional[int] = None
     ) -> None:
-        super(PositionalEncoding, self).__init__()
+        super(_PositionalEncoding, self).__init__()
         self.num_atoms = num_atoms
         self.input_dim = input_dim
 
@@ -47,7 +48,7 @@ class PositionalEncoding(ABC, nn.Module):
         return f"num_atoms={self.num_atoms}, " f"input_dim={self.input_dim}"
 
 
-class RegularHerglotzPE(PositionalEncoding):
+class RegularHerglotzPE(_PositionalEncoding):
     """
     Regular Herglotz Positional Encoding.
 
@@ -94,7 +95,7 @@ class RegularHerglotzPE(PositionalEncoding):
             raise ValueError("Input dimension must be at least 2.")
 
         A = torch.stack(
-            [self.__generate_herglotz_vector() for i in range(self.num_atoms)],
+            [self._generate_herglotz_vector() for i in range(self.num_atoms)],
             dim=0,
         )
 
@@ -127,7 +128,7 @@ class RegularHerglotzPE(PositionalEncoding):
                 "bias_imag", torch.zeros(self.num_atoms, dtype=torch.float32)
             )
 
-    def __generate_herglotz_vector(self) -> torch.Tensor:
+    def _generate_herglotz_vector(self) -> torch.Tensor:
         """
         Generates a complex vector (atom) for the Herglotz encoding.
 
@@ -215,7 +216,7 @@ class IregularHerglotzPE(RegularHerglotzPE):
         return repr + f", omega0={self.omega0.item()}"
 
 
-class FourierPE(PositionalEncoding):
+class FourierPE(_PositionalEncoding):
     """
     Fourier Positional Encoding.
 
@@ -265,3 +266,31 @@ class FourierPE(PositionalEncoding):
     def extra_repr(self) -> str:
         repr = super().extra_repr()
         return repr + f", omega0={self.omega0.item()}"
+
+
+class ClassInstantier(OrderedDict):
+    def __getitem__(self, key):
+        content = super().__getitem__(key)
+        if isinstance(content, tuple):
+            cls, default_kwargs = content
+        else:
+            cls, default_kwargs = content, {}
+
+        return lambda **kwargs: cls(**{**default_kwargs, **kwargs})
+
+
+PE2CLS = {
+    "herglotz": (RegularHerglotzPE, {"bias": True, "omega0": 1.0}),
+    "irregular_herglotz": (IregularHerglotzPE, {"bias": True, "omega0": 1.0}),
+    "fourier": (FourierPE, {"bias": True, "omega0": 1.0}),
+}
+
+PE2FN = ClassInstantier(PE2CLS)
+
+
+def get_positional_encoding(pe: str, **kwargs) -> nn.Module:
+
+    if pe not in PE2CLS:
+        raise ValueError(f"Invalid positional encoding: {pe}")
+
+    return PE2FN[pe](**kwargs)

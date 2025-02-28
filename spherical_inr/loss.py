@@ -19,6 +19,13 @@ class CartesianLaplacianLoss(nn.Module):
         return loss
 
 
+class S2LaplacianLoss(nn.Module):
+    def forward(self, output: torch.Tensor, input: torch.Tensor) -> torch.Tensor:
+        lap = D.s2_laplacian(output, input, track=True)
+        loss = (lap).pow(2).mean(dim=0)
+        return loss
+
+
 class CartesianGradientMSELoss(nn.Module):
     def forward(
         self, target: torch.Tensor, output: torch.Tensor, input: torch.Tensor
@@ -33,6 +40,16 @@ class SphericalGradientMSELoss(nn.Module):
         self, target: torch.Tensor, output: torch.Tensor, input: torch.Tensor
     ) -> torch.Tensor:
         grad = D.spherical_gradient(output, input, track=True)
+        loss = (grad - target).pow(2).sum(dim=-1).mean(dim=0)
+        return loss
+
+
+class S2GradientMSELoss(nn.Module):
+
+    def forward(
+        self, target: torch.Tensor, output: torch.Tensor, input: torch.Tensor
+    ) -> torch.Tensor:
+        grad = D.s2_gradient(output, input, track=True)
         loss = (grad - target).pow(2).sum(dim=-1).mean(dim=0)
         return loss
 
@@ -63,6 +80,22 @@ class SphericalGradientLaplacianMSELoss(nn.Module):
     ) -> torch.Tensor:
         grad = D.spherical_gradient(output, input, track=True)
         lap = D.spherical_divergence(grad, input, track=True)
+        loss = (grad - target).pow(2).sum(dim=-1).mean(
+            dim=0
+        ) + self.alpha_reg * lap.pow(2).mean(dim=0)
+        return loss
+
+
+class S2GradientLaplacianMSELoss(nn.Module):
+    def __init__(self, alpha_reg: float = 1.0):
+        super().__init__()
+        self.register_buffer("alpha_reg", torch.tensor(alpha_reg))
+
+    def forward(
+        self, target: torch.Tensor, output: torch.Tensor, input: torch.Tensor
+    ) -> torch.Tensor:
+        grad = D.s2_gradient(output, input, track=True)
+        lap = D.s2_divergence(grad, input, track=True)
         loss = (grad - target).pow(2).sum(dim=-1).mean(
             dim=0
         ) + self.alpha_reg * lap.pow(2).mean(dim=0)

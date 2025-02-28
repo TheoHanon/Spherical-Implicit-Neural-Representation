@@ -54,6 +54,11 @@ def spherical_gradient(
         - d/dφ is divided by (r * sin(theta)).
     """
 
+    if inputs.size(-1) != 3:
+        raise ValueError(
+            "Spherical gradient is only defined for 3D spherical (r, θ, φ) coordinates"
+        )
+
     grad = _gradient(outputs, inputs, create_graph=track, retain_graph=track)
     r = inputs[..., 0]
     theta = inputs[..., 1]
@@ -71,45 +76,28 @@ def spherical_gradient(
     return grad
 
 
-def spherical_divergence(
+def s2_gradient(
     outputs: torch.Tensor, inputs: torch.Tensor, track: bool = False
 ) -> torch.Tensor:
 
-    if outputs.size(-1) != 3:
+    if inputs.size(-1) != 2:
         raise ValueError(
-            "Spherical divergence is only defined for spherical vector fields."
+            "S2 gradient is only defined for 2D spherical (θ, φ) coordinates"
         )
 
-    r = inputs[..., 0]
-    theta = inputs[..., 1]
+    grad = _gradient(outputs, inputs, create_graph=track, retain_graph=track)
+    theta = inputs[..., 0]
 
-    sin_theta = torch.sin(theta)
-    r_sin_theta = r * sin_theta
-    r2 = r**2
+    with torch.set_grad_enabled(track):
+        grad = torch.stack(
+            [
+                grad[..., 0],
+                grad[..., 1] / (torch.sin(theta)),
+            ],
+            dim=-1,
+        )
 
-    # Combine gradient computations
-    outputs_to_grad = [
-        r2 * outputs[..., 0],
-        sin_theta * outputs[..., 1],
-        outputs[..., 2],
-    ]
-
-    scaling_factors = [1 / r2, r_sin_theta, r_sin_theta]
-
-    div = torch.zeros_like(outputs[..., 0])
-
-    for i, (out, scaling_factors) in enumerate(zip(outputs_to_grad, scaling_factors)):
-
-        grad = _gradient(
-            out,
-            inputs,
-            create_graph=track,
-            retain_graph=True if i < outputs.size(-1) - 1 else track,
-        )[..., i]
-        with torch.set_grad_enabled(track):
-            div += grad * scaling_factors
-
-    return div
+    return grad
 
 
 def cartesian_divergence(
@@ -129,6 +117,110 @@ def cartesian_divergence(
         )[..., i]
 
     return div
+
+
+def spherical_divergence(
+    outputs: torch.Tensor, inputs: torch.Tensor, track: bool = False
+) -> torch.Tensor:
+
+    if outputs.size(-1) != 3:
+        raise ValueError(
+            "Spherical divergence is only defined for (r_hat, θ_hat, φ_hat) vector fields."
+        )
+
+    r = inputs[..., 0]
+    theta = inputs[..., 1]
+
+    sin_theta = torch.sin(theta)
+    r_sin_theta = r * sin_theta
+    r2 = r**2
+
+    # Combine gradient computations
+    outputs_to_grad = [
+        r2 * outputs[..., 0],
+        sin_theta * outputs[..., 1],
+        outputs[..., 2],
+    ]
+
+    scaling_factors = [1 / r2, 1 / r_sin_theta, 1 / r_sin_theta]
+
+    div = torch.zeros_like(outputs[..., 0])
+
+    for i, (out, scaling_factors) in enumerate(zip(outputs_to_grad, scaling_factors)):
+
+        grad = _gradient(
+            out,
+            inputs,
+            create_graph=track,
+            retain_graph=True if i < outputs.size(-1) - 1 else track,
+        )[..., i]
+        with torch.set_grad_enabled(track):
+            div += grad * scaling_factors
+
+    return div
+
+
+def s2_divergence(
+    outputs: torch.Tensor, inputs: torch.Tensor, track: bool = False
+) -> torch.Tensor:
+
+    if outputs.size(-1) != 2:
+        raise ValueError(
+            "Spherical divergence is only defined for s2 (θ_hat, φ_hat) vector fields."
+        )
+
+    theta = inputs[..., 0]
+    sin_theta = torch.sin(theta)
+
+    # Combine gradient computations
+    outputs_to_grad = [
+        sin_theta * outputs[..., 0],
+        outputs[..., 1],
+    ]
+
+    scaling_factors = [1 / sin_theta, 1 / sin_theta]
+
+    div = torch.zeros_like(outputs[..., 0])
+
+    for i, (out, scaling_factors) in enumerate(zip(outputs_to_grad, scaling_factors)):
+
+        grad = _gradient(
+            out,
+            inputs,
+            create_graph=track,
+            retain_graph=True if i < outputs.size(-1) - 1 else track,
+        )[..., i]
+        with torch.set_grad_enabled(track):
+            div += grad * scaling_factors
+
+    return div
+
+
+def cartesian_laplacian(
+    outputs: torch.Tensor,
+    inputs: torch.Tensor,
+    track: bool = False,
+) -> torch.Tensor:
+    """
+    Compute the Cartesian laplacian of a function.
+
+    If a precomputed gradient is provided via the `grad` parameter, it is used directly
+    to compute the divergence. Otherwise, the gradient is computed from `outputs`.
+
+    Args:
+        outputs: Tensor representing function values. Ignored if `grad` is provided.
+        inputs: Coordinates in Cartesian space.
+        track: Whether to track gradients for higher-order derivatives.
+        grad: Optional precomputed gradient of the function.
+
+    Returns:
+        Tensor representing the laplacian.
+    """
+
+    grad = cartesian_gradient(outputs, inputs, track=True)
+
+    laplacian = cartesian_divergence(grad, inputs, track=track)
+    return laplacian
 
 
 def spherical_laplacian(
@@ -157,28 +249,12 @@ def spherical_laplacian(
     return laplacian
 
 
-def cartesian_laplacian(
+def s2_laplacian(
     outputs: torch.Tensor,
     inputs: torch.Tensor,
     track: bool = False,
 ) -> torch.Tensor:
-    """
-    Compute the Cartesian laplacian of a function.
 
-    If a precomputed gradient is provided via the `grad` parameter, it is used directly
-    to compute the divergence. Otherwise, the gradient is computed from `outputs`.
-
-    Args:
-        outputs: Tensor representing function values. Ignored if `grad` is provided.
-        inputs: Coordinates in Cartesian space.
-        track: Whether to track gradients for higher-order derivatives.
-        grad: Optional precomputed gradient of the function.
-
-    Returns:
-        Tensor representing the laplacian.
-    """
-
-    grad = cartesian_gradient(outputs, inputs, track=True)
-
-    laplacian = cartesian_divergence(grad, inputs, track=track)
+    grad = s2_gradient(outputs, inputs, track=True)
+    laplacian = s2_divergence(grad, inputs, track=track)
     return laplacian
