@@ -2,7 +2,12 @@ import unittest
 import torch
 
 
-from spherical_inr import PositionalEncoding, HerglotzPE, IregularHerglotzPE, FourierPE
+from spherical_inr import (
+    PositionalEncoding,
+    RegularHerglotzPE,
+    IregularHerglotzPE,
+    FourierPE,
+)
 
 
 class TestPositionalEncodingAbstract(unittest.TestCase):
@@ -23,7 +28,7 @@ class TestHerglotzPE(unittest.TestCase):
     def test_invalid_input_dim(self):
         # Input dimension below 2 should raise ValueError.
         with self.assertRaises(ValueError):
-            _ = HerglotzPE(
+            _ = RegularHerglotzPE(
                 num_atoms=self.num_atoms,
                 input_dim=1,
                 bias=self.bias,
@@ -32,7 +37,7 @@ class TestHerglotzPE(unittest.TestCase):
             )
 
     def test_forward_output_shape_and_type(self):
-        pe = HerglotzPE(
+        pe = RegularHerglotzPE(
             num_atoms=self.num_atoms,
             input_dim=self.input_dim,
             bias=self.bias,

@@ -1,10 +1,10 @@
 # Spherical-Implicit-Neural-Representation
 
-A package for spherical implicit neural representations using Herglotz-based positional encoding.
+*Spherical-Implicit-Neural-Representation* is a Python package for constructing spherical implicit neural representations using Herglotz-based positional encoding. It provides flexible modules for processing spherical data along with customizable positional encoding layers and regularization tools.
 
 ## Installation
 
-You can install the package from PyPI:
+Install the package from PyPI:
 
 ```bash
 pip install spherical-inr
@@ -20,72 +20,117 @@ pip install -e .
 
 ## Getting Started
 
-### Instantiate a Network
+### Instantiate HerglotzNet
 
-Below is an example of how to instantiate and use the `HerglotzNet` module:
+The `HerglotzNet` module is designed for (θ, φ) coordinate data. Here’s an example of how to instantiate and use it:
 
 ```python
 import torch
-import spherical_inr as sph 
-
+import spherical_inr as sph
 
 # Parameters for HerglotzNet
-input_dim = 2         # must be 1 or 2 for HerglotzNet
-output_dim = 8
-num_atoms = 16
-mlp_sizes = 3*[32]  # hidden layer sizes
+output_dim = 1
+inr_sizes = [16] + 3 * [32]  # [PE size] + (hidden layers * hidden features)
 omega0 = 1.0
-unit_sphere = True
 seed = 42
 
-# Instantiate the network
+
+# Instantiate the network NOTE : # HNET is defined for (θ, φ) coordinates only
 model = sph.HerglotzNet(
-    input_dim=input_dim,
     output_dim=output_dim,
-    num_atoms=num_atoms,
-    mlp_sizes=mlp_sizes,
+    inr_sizes=inr_sizes,
     bias=True,
-    omega0=omega0,
+    pe_omega0=omega0,
     seed=seed
 )
 
-# Example input (for input_dim=2)
-dummy_input = torch.randn(4, input_dim)
+# Example
+dummy_input = torch.randn(4, 2)
 output = model(dummy_input)
 print(output)
 ```
 
+### Generic Cartesian INR
+
+You can also create a customized Cartesian implicit neural representation (INR). For example:
+
+```python
+import torch
+import spherical_inr as sph
+
+# INR parameters
+input_dim = 3
+output_dim = 1
+inr_sizes = [100] + 3 * [100]
+pe = "fourier"
+activation = "sin"
+bias = False
+
+# Instantiate a generic Cartesian INR
+inr = sph.INR(
+    input_dim=input_dim,
+    output_dim=output_dim,
+    inr_sizes=inr_sizes,
+    pe=pe,
+    activation=activation,
+    bias=bias
+)
+```
+
+To incorporate Laplacian regularization into your loss function:
+
+```python
+import torch
+from spherical_inr.loss import CartesianLaplacianLoss
+
+laplacian_loss = CartesianLaplacianLoss()
+mse_loss = torch.nn.MSELoss()
+
+def loss_fn(target, y_pred, y_reg, x_reg):
+    reg = laplacian_loss(y_reg, x_reg)
+    mse = mse_loss(target, y_pred)
+    return reg + mse
+```
+
+Then train your model as usual.
+
 ### Instantiate and Use a Positional Encoding
 
-You can also directly instantiate a positional encoding and use it in your own torch model:
+You can also directly instantiate a positional encoding module and integrate it into your own PyTorch model. For example:
 
 ```python
 import torch
 import torch.nn as nn
-import spherical_inr as sph 
+import spherical_inr as sph
 
-# Instantiate Herglotz positional encoding (input_dim must be at least 2)
-pe = sph.HerglotzPE(
-    num_atoms=16,
-    input_dim=3,
-    bias=True,
-    omega0=1.0,
-    seed=42
-)
-
-# Example model using the positional encoding
+# Example model using a positional encoding
 class MyModel(nn.Module):
-    def __init__(self, pe):
+    def __init__(self, num_atoms, input_dim, output_dim, bias, omega0, seed):
         super().__init__()
-        self.pe = pe
-        self.linear = nn.Linear(16, 8)
+        self.pe = sph.RegularHerglotzPE(
+            num_atoms=num_atoms,
+            input_dim=input_dim,
+            bias=bias,
+            omega0=omega0,
+            seed=seed
+        )
+        self.linear = nn.Linear(num_atoms, output_dim)
         
     def forward(self, x):
         x = self.pe(x)
         return self.linear(x)
 
-model = MyModel(pe)
-dummy_input = torch.randn(4, 3)
+# Instantiate the model
+model = MyModel(
+    num_atoms=50,
+    input_dim=10,
+    output_dim=5,
+    bias=True,
+    omega0=1.0,
+    seed=42,
+)
+
+dummy_input = torch.randn(4, 10)
 output = model(dummy_input)
 print(output)
 ```
@@ -96,4 +141,3 @@ print(output)
    *Herglotz-NET: Implicit Neural Representation of Spherical Data with Harmonic Positional Encoding*,  
    arXiv preprint, 2025.  
    [arXiv:2502.13777](https://arxiv.org/abs/2502.13777)
-
