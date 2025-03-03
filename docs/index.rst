@@ -7,7 +7,8 @@ Spherical-Implicit-Neural-Representation documentation
 ======================================================
 
 .. toctree::
-   :maxdepth: 2 : Modules:
+   :maxdepth: 2 
+   :caption: Modules:
 
    modules/inr
    modules/differentiation
