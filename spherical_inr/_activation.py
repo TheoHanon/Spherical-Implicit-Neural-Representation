@@ -61,6 +61,8 @@ ACT2FN = ClassInstantier(ACT2CLS)
 
 def get_activation(activation: str, **kwargs) -> nn.Module:
     if activation not in ACT2CLS:
-        raise ValueError(f"Invalid activation: {activation}")
+        raise ValueError(
+            f"Invalid activation: {activation}. Should be one of {list(ACT2CLS.keys())}."
+        )
 
     return ACT2FN[activation](**kwargs)
