@@ -39,22 +39,25 @@ def _generate_herglotz_vector(dim, gen : Optional[int] = None) -> torch.Tensor:
     return a_R + 1j * a_I
 
 class _PositionalEncoding(ABC, nn.Module):
-    """
-    Abstract base class for positional encoding modules.
+    r"""Abstract base class for positional encoding modules.
+
+    This module serves as a template for generating positional encodings used in various models.
+    The encoding is parameterized by the number of atoms (i.e. encoding vectors) and the input
+    dimensionality.
 
     Parameters:
-        num_atoms (int): Number of atoms (encoding vectors) to generate.
+        num_atoms (int): Number of encoding atoms to generate.
         input_dim (int): Dimensionality of the input.
         seed (Optional[int]): Optional random seed for reproducibility.
 
     Attributes:
-        num_atoms (int): Number of atoms used in the encoding.
+        num_atoms (int): Number of encoding atoms.
         input_dim (int): Dimensionality of the input.
-        gen (Optional[torch.Generator]): Random number generator for reproducibility (if seed is provided).
+        gen (Optional[torch.Generator]): Random number generator (if a seed is provided).
 
     Methods:
         forward(x: torch.Tensor) -> torch.Tensor:
-            Abstract method to compute the positional encoding of input tensor x.
+            Abstract method to compute the positional encoding of the input tensor.
         extra_repr() -> str:
             Returns a string representation of the module's parameters.
     """
@@ -81,32 +84,40 @@ class _PositionalEncoding(ABC, nn.Module):
 
 
 class RegularHerglotzPE(_PositionalEncoding):
-    """
-    Regular Herglotz Positional Encoding.
+    r"""Regular Herglotz Positional Encoding.
 
-    This module generates a positional encoding based on the Herglotz approach, constructing complex atoms
-    by generating two independent and orthogonal random vectors.
+    This module generates a positional encoding based on the Herglotz approach. It constructs complex
+    encoding atoms by generating two independent random vectors that are normalized and made orthogonal.
+    Given an input :math:`x`, the encoding is computed as
+
+    .. math::
+        z = \omega_0 \Bigl( (w_{\text{real}} + i\,w_{\text{imag}}) \,(A\,x) + (b_{\text{real}} + i\,b_{\text{imag}}) \Bigr),
+        \quad
+        E(x) = \exp\bigl(-\operatorname{Im}(z)\bigr) \cos\bigl(\operatorname{Re}(z)\bigr),
+
+    where :math:`A` is the matrix of complex atoms, :math:`\omega_0` is a frequency factor, and
+    :math:`w_{\text{real}},\,w_{\text{imag}},\,b_{\text{real}},\,b_{\text{imag}}` are learnable parameters or buffers.
 
     Parameters:
         num_atoms (int): Number of atoms to generate.
         input_dim (int): Dimensionality of the input (must be at least 2).
-        bias (bool, optional): If True, uses learnable bias parameters. Defaults to True.
+        bias (bool, optional): If True, uses learnable bias parameters. (default: True)
         seed (Optional[int], optional): Seed for reproducibility.
-        omega0 (float, optional): Frequency factor used in the encoding. Defaults to 1.0.
+        omega0 (float, optional): Frequency factor applied to the encoding. (default: 1.0)
 
     Attributes:
         A (torch.Tensor): Buffer containing the generated complex atoms.
         omega0 (torch.Tensor): Buffer holding the frequency factor.
         w_real (nn.Parameter): Learnable real part of the weights.
         w_imag (nn.Parameter): Learnable imaginary part of the weights.
-        bias_real (nn.Parameter or buffer): Real part of the bias (learnable if bias is True).
-        bias_imag (nn.Parameter or buffer): Imaginary part of the bias (learnable if bias is True).
+        bias_real (nn.Parameter or buffer): Real part of the bias.
+        bias_imag (nn.Parameter or buffer): Imaginary part of the bias.
 
     Methods:
-        generate_herglotz_vector() -> torch.Tensor:
-            Generates a complex vector (atom) for the encoding.
+        _generate_herglotz_vector() -> torch.Tensor:
+            Generates a complex atom by combining two independent normalized random vectors.
         forward(x: torch.Tensor) -> torch.Tensor:
-            Computes the positional encoding for input tensor x.
+            Computes the positional encoding for the input tensor :math:`x`.
         extra_repr() -> str:
             Returns a string representation of the module's parameters.
     """
@@ -251,17 +262,27 @@ class StackedRegularHerglotzMapPE(_PositionalEncoding):
 
 
 class IregularHerglotzPE(RegularHerglotzPE):
-    """
-    Irregular Herglotz Positional Encoding.
+    r"""Irregular Herglotz Positional Encoding.
 
-    An extension of HerglotzPE which create an PE where each atom can be decomposed as band limited Irregular Solid Harmonic Series.
+    This module extends the Regular Herglotz Positional Encoding by incorporating a normalization
+    factor derived from the input norm. Given an input :math:`x` with Euclidean norm :math:`r = \|x\|`,
+    the encoding is computed as
+
+    .. math::
+        z = \omega_0 \Bigl( (w_{\text{real}} + i\,w_{\text{imag}}) \frac{A\,x}{r^2} + (b_{\text{real}} + i\,b_{\text{imag}}) \Bigr),
+        \quad
+        E(x) = \frac{1}{r} \exp\bigl(-\operatorname{Im}(z)\bigr) \cos\bigl(\operatorname{Re}(z)\bigr).
 
     Parameters:
-        Inherits all parameters from HerglotzPE.
+        num_atoms (int): Number of atoms to generate.
+        input_dim (int): Dimensionality of the input.
+        bias (bool, optional): If True, uses learnable bias parameters. (default: True)
+        seed (Optional[int], optional): Seed for reproducibility.
+        omega0 (float, optional): Frequency factor applied to the encoding. (default: 1.0)
 
     Methods:
         forward(x: torch.Tensor) -> torch.Tensor:
-            Computes the irregular positional encoding for input tensor x, including normalization.
+            Computes the irregular positional encoding for the input tensor :math:`x`.
         extra_repr() -> str:
             Returns a string representation of the module's parameters.
     """
@@ -324,26 +345,32 @@ class StackedIregularHerglotzMapPE(StackedRegularHerglotzMapPE):
 
 
 class FourierPE(_PositionalEncoding):
-    """
-    Fourier Positional Encoding.
+    r"""Fourier Positional Encoding.
 
-    This module applies a learnable linear transformation to the input (via the Omega weight matrix) followed
-    by a sine activation scaled by a frequency factor omega0.
+    This module applies a learnable linear transformation followed by a sinusoidal activation to compute the positional encoding.
+    Given an input :math:`x`, the encoding is computed as
+
+    .. math::
+        z = \Omega(x),
+        \quad
+        E(x) = \sin\bigl(\omega_0\,z\bigr),
+
+    where :math:`\Omega` is a learnable linear transformation and :math:`\omega_0` is a frequency factor.
 
     Parameters:
         num_atoms (int): Number of output features (atoms).
         input_dim (int): Dimensionality of the input.
-        bias (bool, optional): If True, the linear layer includes a bias term. Defaults to True.
+        bias (bool, optional): If True, the linear transformation includes a bias term. (default: True)
         seed (Optional[int], optional): Seed for reproducibility.
-        omega0 (float, optional): Frequency factor applied to the activation. Defaults to 1.0.
+        omega0 (float, optional): Frequency factor applied to the sinusoidal activation. (default: 1.0)
 
     Attributes:
         omega0 (torch.Tensor): Buffer holding the frequency factor.
-        Omega (nn.Linear): Linear layer mapping input_dim to num_atoms.
+        Omega (nn.Linear): Linear layer mapping :math:`\mathbb{R}^{\text{input_dim}}` to :math:`\mathbb{R}^{\text{num_atoms}}`.
 
     Methods:
         forward(x: torch.Tensor) -> torch.Tensor:
-            Computes the Fourier positional encoding for input tensor x.
+            Computes the Fourier positional encoding for the input tensor :math:`x`.
         extra_repr() -> str:
             Returns a string representation of the module's parameters.
     """
@@ -376,6 +403,13 @@ class FourierPE(_PositionalEncoding):
 
 
 class ClassInstantier(OrderedDict):
+    r"""Helper class for instantiating classes with default parameters.
+
+    This class wraps an OrderedDict to allow lazy instantiation of classes.
+    When an item is accessed, it returns a lambda function that creates an instance of the class,
+    merging default keyword arguments with those provided by the user.
+    """
+
     def __getitem__(self, key):
         content = super().__getitem__(key)
         if isinstance(content, tuple):
@@ -398,6 +432,22 @@ PE2FN = ClassInstantier(PE2CLS)
 
 
 def get_positional_encoding(pe: str, **kwargs) -> nn.Module:
+    r"""Construct a positional encoding module.
+
+    This function returns an instance of a positional encoding module corresponding to the specified
+    type. The available types are: ``"herglotz"``, ``"irregular_herglotz"``, and ``"fourier"``.
+    Additional parameters are forwarded to the constructor of the chosen module.
+
+    Parameters:
+        pe (str): Identifier for the type of positional encoding. Must be one of ``"herglotz"``, ``"irregular_herglotz"``, or ``"fourier"``.
+        **kwargs: Additional keyword arguments to configure the positional encoding module.
+
+    Returns:
+        nn.Module: An instance of the specified positional encoding module.
+
+    Raises:
+        ValueError: If the specified positional encoding type is not supported.
+    """
 
     if pe not in PE2CLS:
         raise ValueError(f"Invalid positional encoding: {pe}")
