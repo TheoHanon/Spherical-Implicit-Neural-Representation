@@ -58,7 +58,6 @@ shapely==2.0.7
 six==1.17.0
 sniffio==1.3.1
 snowballstemmer==2.2.0
-spherical-inr==0.2.2
 Sphinx==8.2.1
 sphinx-autobuild==2024.10.3
 sphinx-rtd-theme==3.0.2
