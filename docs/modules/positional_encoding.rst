@@ -5,4 +5,3 @@ Positional Encodings
     :members:
     :undoc-members:
     :no-index:
-    :show-inheritance:
