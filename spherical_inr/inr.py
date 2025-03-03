@@ -76,11 +76,11 @@ class HerglotzNet(nn.Module):
 
     A neural network designed for inputs defined on the 2-sphere. This network first converts the input
     (spherical coordinates) to Cartesian coordinates, then computes a Herglotz positional encoding :math:`\psi(x)`
-    and finally processes the result through a sine-activated MLP. In summary, if :math:`x_{\text{cart}}` denotes the
+    and finally processes the result through a sine-activated MLP. In summary, if :math:`x(\theta, \varphi)` denotes the
     Cartesian coordinates derived from :math:`x`, then
 
     .. math::
-        \text{HerglotzNet}(x) = \text{SineMLP}\Bigl(\psi(x_{\text{cart}})\Bigr).
+        \text{HerglotzNet}(x) = \text{SineMLP}\Bigl(\psi(x(\theta, \varphi))\Bigr).
 
     Attributes:
         input_dim (int): Dimensionality of the input (typically 1 or 2 for spherical coordinates).
@@ -137,9 +137,9 @@ class SolidHerlotzNet(nn.Module):
     The network accepts input in a spherical coordinate system and computes its representation as
 
     .. math::
-        \text{SolidHerlotzNet}(x) = \text{SineMLP}\Bigl(\psi(x_{\text{cart}})\Bigr),
+        \text{SolidHerlotzNet}(x) = \text{SineMLP}\Bigl(\psi(x(r, \theta, \varphi))\Bigr),
 
-    where :math:`x_{\text{cart}}` denotes the Cartesian coordinates derived from the spherical input.
+    where :math:`x(r, \theta, \varphi)` denotes the Cartesian coordinates derived from the spherical input.
     The type of positional encoding is chosen via a parameter ("R" for regular, "I" for irregular).
 
     Parameters:
