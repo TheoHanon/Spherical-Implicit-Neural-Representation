@@ -7,4 +7,3 @@ MLPs
     :show-inheritance:
     :no-inherited-members:
     :exclude-members: forward
-    
