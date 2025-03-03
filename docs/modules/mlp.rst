@@ -1,5 +1,5 @@
-mlp modules
-===========
+MLPs
+====
 .. automodule:: spherical_inr.mlp
     :members:
     :undoc-members:
