@@ -9,6 +9,26 @@ from typing import Optional, List
 
 
 class INR(nn.Module):
+    r"""Implicit Neural Representation (INR).
+
+    Implements an implicit neural representation where an input :math:`x \in \mathbb{R}^{d}` is first mapped to a
+    high-dimensional feature space via a positional encoding :math:`\psi(x)` and then processed by a multilayer
+    perceptron (MLP). In mathematical form, the representation is defined as
+
+    .. math::
+        \text{INR}(x) = \text{MLP}\Bigl(\psi(x)\Bigr).
+
+    Parameters:
+        input_dim (int): Dimensionality of the input.
+        output_dim (int): Dimensionality of the output.
+        inr_sizes (List[int]): A list where the first element specifies the number of atoms for the positional encoding
+            and subsequent elements define the hidden layer sizes of the MLP.
+        pe (str, optional): Identifier for the type of positional encoding (default: "herglotz").
+        pe_kwards (Optional[dict], optional): Additional keyword arguments for configuring the positional encoding.
+        activation (str, optional): Activation function used in the MLP (default: "relu").
+        activation_kwargs (dict, optional): Additional keyword arguments for the activation function.
+        bias (bool, optional): If True, includes bias terms in the network layers (default: False).
+    """
 
     def __init__(
         self,
@@ -21,26 +41,6 @@ class INR(nn.Module):
         activation_kwargs: dict = {},
         bias: bool = False,
     ) -> None:
-        r"""Implicit Neural Representation (INR).
-
-        Implements an implicit neural representation where an input :math:`x \in \mathbb{R}^{d}` is first mapped to a
-        high-dimensional feature space via a positional encoding :math:`\psi(x)` and then processed by a multilayer
-        perceptron (MLP). In mathematical form, the representation is defined as
-
-        .. math::
-            \text{INR}(x) = \text{MLP}\Bigl(\psi(x)\Bigr).
-
-        Parameters:
-            input_dim (int): Dimensionality of the input.
-            output_dim (int): Dimensionality of the output.
-            inr_sizes (List[int]): A list where the first element specifies the number of atoms for the positional encoding
-                and subsequent elements define the hidden layer sizes of the MLP.
-            pe (str, optional): Identifier for the type of positional encoding (default: "herglotz").
-            pe_kwards (Optional[dict], optional): Additional keyword arguments for configuring the positional encoding.
-            activation (str, optional): Activation function used in the MLP (default: "relu").
-            activation_kwargs (dict, optional): Additional keyword arguments for the activation function.
-            bias (bool, optional): If True, includes bias terms in the network layers (default: False).
-        """
 
         super(INR, self).__init__()
 
