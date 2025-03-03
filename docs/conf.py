@@ -13,7 +13,8 @@ sys.path.insert(0, os.path.abspath(".."))
 project = "Spherical-Implicit-Neural-Representation"
 copyright = "2025, Theo Hanon"
 author = "Theo Hanon"
-release = "v0.2.3"
+release = "latest"
+version = "latest"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
