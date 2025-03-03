@@ -1,5 +1,5 @@
-loss modules
-============
+Losses
+======
 .. automodule:: spherical_inr.loss
     :members:
     :undoc-members:

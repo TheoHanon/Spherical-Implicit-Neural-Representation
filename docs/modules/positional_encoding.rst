@@ -1,5 +1,5 @@
-positional_encoding modules
-===========================
+Positional Encodings
+====================
 
 .. automodule:: spherical_inr.positional_encoding
     :members:
