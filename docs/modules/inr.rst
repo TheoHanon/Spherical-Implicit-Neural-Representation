@@ -5,3 +5,4 @@ INRs
     :undoc-members:
     :no-index:
     :show-inheritance:
+    :no-inherited-members:
