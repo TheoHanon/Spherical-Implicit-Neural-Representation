@@ -1,5 +1,5 @@
-inr modules
-===========
+INRs
+====
 .. automodule:: spherical_inr.inr
     :members:
     :undoc-members:
