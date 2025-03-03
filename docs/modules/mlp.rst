@@ -6,4 +6,5 @@ MLPs
     :no-index:
     :show-inheritance:
     :no-inherited-members:
+    :exclude-members: forward
     
