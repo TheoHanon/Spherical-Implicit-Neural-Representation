@@ -9,9 +9,34 @@ __all__ = [
     "RegularHerglotzPE",
     "IregularHerglotzPE",
     "FourierPE",
+    "StackedRegularHerglotzMapPE",
+    "StackedIregularHerglotzMapPE",
     "get_positional_encoding",
 ]
 
+
+def _generate_herglotz_vector(dim, gen : Optional[int] = None) -> torch.Tensor:
+    """
+    Generates a complex vector (atom) for the Herglotz encoding.
+
+    The vector is constructed by generating two independent random vectors,
+    normalizing them, and ensuring the imaginary part is orthogonal to the real part.
+
+    Parameters:
+        input_dim (int): The dimension of the vector (2 or 3).
+        generator (Optional[torch.Generator]): A random number generator for reproducibility. Default is None.
+
+    Returns:
+        torch.Tensor: A complex tensor representing the atom (dtype=torch.complex64).
+    """
+
+    a_R = torch.randn(dim, dtype=torch.float32, generator=gen)
+    a_R /= (2**0.5) * torch.norm(a_R)
+    a_I = torch.randn(dim, dtype=torch.float32, generator=gen)
+    a_I -= 2 * torch.dot(a_I, a_R) * a_R  # Orthogonalize a_I with respect to a_R
+    a_I /= (2**0.5) * torch.norm(a_I)
+
+    return a_R + 1j * a_I
 
 class _PositionalEncoding(ABC, nn.Module):
     r"""Abstract base class for positional encoding modules.
@@ -100,7 +125,7 @@ class RegularHerglotzPE(_PositionalEncoding):
             raise ValueError("Input dimension must be at least 2.")
 
         A = torch.stack(
-            [self._generate_herglotz_vector() for i in range(self.num_atoms)],
+            [_generate_herglotz_vector(self.input_dim, self.gen) for i in range(self.num_atoms)],
             dim=0,
         )
 
@@ -133,28 +158,6 @@ class RegularHerglotzPE(_PositionalEncoding):
                 "bias_imag", torch.zeros(self.num_atoms, dtype=torch.float32)
             )
 
-    def _generate_herglotz_vector(self) -> torch.Tensor:
-        """
-        Generates a complex vector (atom) for the Herglotz encoding.
-
-        The vector is constructed by generating two independent random vectors,
-        normalizing them, and ensuring the imaginary part is orthogonal to the real part.
-
-        Parameters:
-            input_dim (int): The dimension of the vector (2 or 3).
-            generator (Optional[torch.Generator]): A random number generator for reproducibility. Default is None.
-
-        Returns:
-            torch.Tensor: A complex tensor representing the atom (dtype=torch.complex64).
-        """
-
-        a_R = torch.randn(self.input_dim, dtype=torch.float32, generator=self.gen)
-        a_R /= (2**0.5) * torch.norm(a_R)
-        a_I = torch.randn(self.input_dim, dtype=torch.float32, generator=self.gen)
-        a_I -= 2 * torch.dot(a_I, a_R) * a_R  # Orthogonalize a_I with respect to a_R
-        a_I /= (2**0.5) * torch.norm(a_I)
-
-        return a_R + 1j * a_I
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
 
@@ -171,6 +174,65 @@ class RegularHerglotzPE(_PositionalEncoding):
     def extra_repr(self) -> str:
         repr = super().extra_repr()
         return repr + f", omega0={self.omega0.item()}"
+
+
+class StackedRegularHerglotzMapPE(_PositionalEncoding):
+    """
+    Stacked Regular Herglotz Map Positional Encoding.
+
+    This module computes a stacked variant of the Regular Herglotz positional encoding.
+    It first applies a linear transformation of the input using pre-generated complex atoms.
+    Then, it “stacks” the encoding by raising selected components to integer powers corresponding
+    to different orders in a harmonic expansion. The total number of atoms is determined as:
+        num_atoms = L * (L + 1) // 2,
+    where L is the stacking depth.
+
+    Parameters:
+        L (int): The stacking depth, determining the highest order of the expansion.
+        input_dim (int, optional): Dimensionality of the input (default is 3).
+        seed (Optional[int], optional): Seed for reproducibility.
+
+    Attributes:
+        L (int): The stacking depth.
+        A (torch.Tensor): Buffer containing the generated complex atoms of shape 
+            (num_atoms, input_dim), where num_atoms = L*(L+1)//2.
+
+    Methods:
+        forward(x: torch.Tensor) -> torch.Tensor:
+            Computes the positional encoding for input tensor x. After a linear transformation using
+            the complex atoms, select elements are raised to powers corresponding to the harmonic order.
+        extra_repr() -> str:
+            Returns a string representation of the module's parameters.
+    """
+    def __init__(self, L: int, input_dim: int = 3, seed: Optional[int] = None) -> None:
+        super(StackedRegularHerglotzMapPE, self).__init__(
+            num_atoms=L*(L+1) // 2, input_dim=input_dim, seed=seed
+        )
+        A = torch.stack(
+            [_generate_herglotz_vector(self.input_dim, self.gen) for i in range(self.num_atoms)],
+            dim=0
+        )
+        exponents = [1]
+        for l in range(1, L):
+            exponents.extend([l] * (l + 1))
+
+        self.L = L
+        self.register_buffer("A", A)
+        self.register_buffer("exponents", torch.tensor(exponents, dtype=torch.float32))
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.to(self.A.dtype)
+        x = torch.matmul(x, self.A.t())
+        
+        x[..., 1 :] = torch.pow(x[..., 1:], self.exponents[1:].view(1, -1))
+
+        return x.real
+    
+    def extra_repr(self):
+        return super().extra_repr() + f", L={self.L}"
+
+        
+
 
 
 class IregularHerglotzPE(RegularHerglotzPE):
@@ -206,10 +268,48 @@ class IregularHerglotzPE(RegularHerglotzPE):
         )
 
         return 1 / r * torch.exp(-x.imag) * torch.cos(x.real)
+    
+class StackedIregularHerglotzMapPE(StackedRegularHerglotzMapPE):
+    """
+    Stacked Irregular Herglotz Map Positional Encoding.
 
-    def extra_repr(self) -> str:
-        repr = super().extra_repr()
-        return repr + f", omega0={self.omega0.item()}"
+    This module extends the stacked regular Herglotz encoding by incorporating a radial normalization.
+    The input is first normalized by its norm, then transformed using the pre-generated complex atoms.
+    Similar to its regular counterpart, the encoding is “stacked” by raising certain components to 
+    integer powers adjusted by the radial factor. This variant is useful when a band-limited 
+    irregular solid harmonic expansion is desired.
+
+    Parameters:
+        L (int): The stacking depth, determining the highest order of the expansion.
+        input_dim (int, optional): Dimensionality of the input (default is 3).
+        seed (Optional[int], optional): Seed for reproducibility.
+
+    Attributes:
+        L (int): The stacking depth.
+        A (torch.Tensor): Buffer containing the generated complex atoms of shape 
+            (num_atoms, input_dim), where num_atoms = L*(L+1)//2.
+
+    Methods:
+        forward(x: torch.Tensor) -> torch.Tensor:
+            Computes the irregular positional encoding for input tensor x. The process involves 
+            normalizing the input by its norm, applying a linear transformation, and then performing
+            a stacking operation where selected components are raised to the appropriate power.
+        extra_repr() -> str:
+            Returns a string representation of the module's parameters.
+    """
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.to(self.A.dtype)
+        r = torch.norm(x, dim=-1, keepdim=True)
+        x = torch.matmul(x, self.A.t())
+        
+        normalized = x / (r * r)
+        x = (1/r) * torch.pow(normalized, self.exponents.view(1, -1))
+
+        return x.real
+
+    def extra_repr(self):
+        return super().extra_repr() + f", L={self.L}"
+
 
 
 class FourierPE(_PositionalEncoding):
@@ -287,6 +387,8 @@ PE2CLS = {
     "herglotz": (RegularHerglotzPE, {"bias": True, "omega0": 1.0}),
     "irregular_herglotz": (IregularHerglotzPE, {"bias": True, "omega0": 1.0}),
     "fourier": (FourierPE, {"bias": True, "omega0": 1.0}),
+    "stacked_herglotz": (StackedRegularHerglotzMapPE, {}),
+    "stacked_irregular_herglotz": (StackedIregularHerglotzMapPE, {}),
 }
 
 PE2FN = ClassInstantier(PE2CLS)
