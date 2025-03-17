@@ -206,14 +206,14 @@ class StackedRegularHerglotzMapPE(_PositionalEncoding):
     """
     def __init__(self, L: int, input_dim: int = 3, seed: Optional[int] = None) -> None:
         super(StackedRegularHerglotzMapPE, self).__init__(
-            num_atoms=L*(L+1) // 2, input_dim=input_dim, seed=seed
+            num_atoms=(L+1)*(L+2) // 2, input_dim=input_dim, seed=seed
         )
         A = torch.stack(
             [_generate_herglotz_vector(self.input_dim, self.gen) for i in range(self.num_atoms)],
             dim=0
         )
-        exponents = [1]
-        for l in range(1, L):
+        exponents = [0]
+        for l in range(1, L+1):
             exponents.extend([l] * (l + 1))
 
         self.L = L
@@ -221,19 +221,18 @@ class StackedRegularHerglotzMapPE(_PositionalEncoding):
         self.register_buffer("exponents", torch.tensor(exponents, dtype=torch.float32))
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        
         x = x.to(self.A.dtype)
         x = torch.matmul(x, self.A.t())
-        
-        x[..., 1 :] = torch.pow(x[..., 1:], self.exponents[1:].view(1, -1))
-
+        x = torch.pow(x, self.exponents.view(1, -1))
+                
         return x.real
+
     
     def extra_repr(self):
         return super().extra_repr() + f", L={self.L}"
 
         
-
-
 
 class IregularHerglotzPE(RegularHerglotzPE):
     r"""Irregular Herglotz Positional Encoding.

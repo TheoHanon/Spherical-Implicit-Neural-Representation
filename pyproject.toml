@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spherical_inr"
+version = "0.3.2"
+description = "A package for spherical positional encoding"
+readme = "README.md"
+requires-python = ">=3.6"
+license = { text = "MIT License" }
+authors = [
+  { name = "Theo Hanon", email = "theo.hanon@student.uclouvain.be" }
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent"
+]
+dependencies = [
+  "torch>=1.7.0"
+]
+
+[project.urls]
+Documentation = "https://spherical-implicit-neural-representation.readthedocs.io/en/latest/"
+"Source Code" = "https://github.com/TheoHanon/Spherical-Implicit-Neural-Representation"
+
+[tool.setuptools.packages.find]
+include = ["spherical_inr", "spherical_inr.*"]
