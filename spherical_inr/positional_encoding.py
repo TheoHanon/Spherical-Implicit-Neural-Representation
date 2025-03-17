@@ -197,12 +197,6 @@ class StackedRegularHerglotzMapPE(_PositionalEncoding):
         A (torch.Tensor): Buffer containing the generated complex atoms of shape 
             (num_atoms, input_dim), where num_atoms = L*(L+1)//2.
 
-    Methods:
-        forward(x: torch.Tensor) -> torch.Tensor:
-            Computes the positional encoding for input tensor x. After a linear transformation using
-            the complex atoms, select elements are raised to powers corresponding to the harmonic order.
-        extra_repr() -> str:
-            Returns a string representation of the module's parameters.
     """
     def __init__(self, L: int, input_dim: int = 3, seed: Optional[int] = None) -> None:
         super(StackedRegularHerglotzMapPE, self).__init__(
@@ -288,13 +282,6 @@ class StackedIregularHerglotzMapPE(StackedRegularHerglotzMapPE):
         A (torch.Tensor): Buffer containing the generated complex atoms of shape 
             (num_atoms, input_dim), where num_atoms = L*(L+1)//2.
 
-    Methods:
-        forward(x: torch.Tensor) -> torch.Tensor:
-            Computes the irregular positional encoding for input tensor x. The process involves 
-            normalizing the input by its norm, applying a linear transformation, and then performing
-            a stacking operation where selected components are raised to the appropriate power.
-        extra_repr() -> str:
-            Returns a string representation of the module's parameters.
     """
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x.to(self.A.dtype)
@@ -397,11 +384,11 @@ def get_positional_encoding(pe: str, **kwargs) -> nn.Module:
     r"""Construct a positional encoding module.
 
     This function returns an instance of a positional encoding module corresponding to the specified
-    type. The available types are: ``"herglotz"``, ``"irregular_herglotz"``, and ``"fourier"``.
+    type. The available types are: ``"herglotz"``, ``"irregular_herglotz"``, ``"fourier"``, ``"stacked_herglotz"``, and ``"stacked_irregular_herglotz"``
     Additional parameters are forwarded to the constructor of the chosen module.
 
     Parameters:
-        pe (str): Identifier for the type of positional encoding. Must be one of ``"herglotz"``, ``"irregular_herglotz"``, or ``"fourier"``.
+        pe (str): Identifier for the type of positional encoding. Must be one of ``"herglotz"``, ``"irregular_herglotz"``, ``"fourier"``, ``"stacked_herglotz"`` or ``"stacked_irregular_herglotz"``.
         **kwargs: Additional keyword arguments to configure the positional encoding module.
 
     Returns:
