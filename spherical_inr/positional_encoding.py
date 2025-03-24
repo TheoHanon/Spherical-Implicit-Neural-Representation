@@ -203,6 +203,7 @@ class NormalizedRegularHerglotzPE(_PositionalEncoding):
         w_I (nn.Parameter): Learnable parameters (initialized to zeros) modulating the imaginary component.
         b_R (nn.Parameter): Learnable real bias.
         b_I (nn.Parameter): Learnable imaginar bias.
+
     """
 
     def __init__(self, num_atoms : Optional[int] = None, L: Optional[int] = None, input_dim: int = 3, seed: Optional[int] = None, rref : float = 1.0, **kwargs) -> None:
@@ -295,6 +296,7 @@ class NormalizedIrregularHerglotzPE(NormalizedRegularHerglotzPE):
         rref (float, optional): Radial reference scale. For inputs with norm r < rref, the atom responses are constrained to be ≤ 1 (default: 1.0).
 
     Attributes:
+
         A (torch.Tensor): Buffer containing the generated complex atoms with shape (num_atoms, input_dim).
         rref (nn.Parameter): Learnable radial reference parameter that controls the normalization.
         w_R (nn.Parameter): Learnable scaling factors for the sine and exponential components, set according to harmonic orders.
@@ -404,6 +406,7 @@ def get_positional_encoding(pe: str, **kwargs) -> nn.Module:
     r"""Construct a positional encoding module.
 
     This function returns an instance of a positional encoding module corresponding to the specified
+
     type. The available types are: ``"herglotz"``, ``"irregular_herglotz"``, ``"fourier"``, ``"normalized_herglotz"`` or ``"normalized_irregular_herglotz"``.
     Additional parameters are forwarded to the constructor of the chosen module.
 
