@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import math
 from collections import OrderedDict
 
 from typing import Optional
@@ -9,8 +10,8 @@ __all__ = [
     "RegularHerglotzPE",
     "IregularHerglotzPE",
     "FourierPE",
-    "StackedRegularHerglotzMapPE",
-    "StackedIregularHerglotzMapPE",
+    "NormalizedRegularHerglotzPE",
+    "NormalizedIrregularHerglotzPE",
     "get_positional_encoding",
 ]
 
@@ -103,10 +104,10 @@ class RegularHerglotzPE(_PositionalEncoding):
     Attributes:
         A (torch.Tensor): Buffer containing the generated complex atoms.
         omega0 (torch.Tensor): Buffer holding the frequency factor.
-        w_real (nn.Parameter): Learnable real part of the weights.
-        w_imag (nn.Parameter): Learnable imaginary part of the weights.
-        bias_real (nn.Parameter or buffer): Real part of the bias.
-        bias_imag (nn.Parameter or buffer): Imaginary part of the bias.
+        w_R (nn.Parameter): Learnable real part of the weights.
+        w_I (nn.Parameter): Learnable imaginary part of the weights.
+        b_R (nn.Parameter or buffer): Real part of the bias.
+        b_I (nn.Parameter or buffer): Imaginary part of the bias.
     """
 
     def __init__(
@@ -132,30 +133,30 @@ class RegularHerglotzPE(_PositionalEncoding):
         self.register_buffer("A", A)
         self.register_buffer("omega0", torch.tensor(omega0, dtype=torch.float32))
 
-        self.w_real = nn.Parameter(
+        self.w_R = nn.Parameter(
             torch.empty(self.num_atoms, dtype=torch.float32).uniform_(
                 -1 / self.input_dim, 1 / self.input_dim, generator=self.gen
             )
         )
-        self.w_imag = nn.Parameter(
+        self.w_I = nn.Parameter(
             torch.empty(self.num_atoms, dtype=torch.float32).uniform_(
                 -1 / self.input_dim, 1 / self.input_dim, generator=self.gen
             )
         )
 
         if bias is True:
-            self.bias_real = nn.Parameter(
+            self.b_R = nn.Parameter(
                 torch.zeros(self.num_atoms, dtype=torch.float32)
             )
-            self.bias_imag = nn.Parameter(
+            self.b_I = nn.Parameter(
                 torch.zeros(self.num_atoms, dtype=torch.float32)
             )
         else:
             self.register_buffer(
-                "bias_real", torch.zeros(self.num_atoms, dtype=torch.float32)
+                "b_R", torch.zeros(self.num_atoms, dtype=torch.float32)
             )
             self.register_buffer(
-                "bias_imag", torch.zeros(self.num_atoms, dtype=torch.float32)
+                "b_I", torch.zeros(self.num_atoms, dtype=torch.float32)
             )
 
 
@@ -165,8 +166,8 @@ class RegularHerglotzPE(_PositionalEncoding):
         x = torch.matmul(x, self.A.t())
 
         x = self.omega0 * (
-            (self.w_real + 1j * self.w_imag) * x
-            + (self.bias_real + 1j * self.bias_imag)
+            (self.w_R + 1j * self.w_I) * x
+            + (self.b_R + 1j * self.b_R)
         )
 
         return torch.exp(-x.imag) * torch.cos(x.real)
@@ -176,77 +177,94 @@ class RegularHerglotzPE(_PositionalEncoding):
         return repr + f", omega0={self.omega0.item()}"
 
 
-class StackedRegularHerglotzMapPE(_PositionalEncoding):
-    """
-    Stacked Regular Herglotz Map Positional Encoding.
+class NormalizedRegularHerglotzPE(_PositionalEncoding):
+    r"""Normalized Regular Herglotz Map Positional Encoding.
 
-    This module computes a stacked variant of the Regular Herglotz positional encoding.
-    It first applies a linear transformation of the input using pre-generated complex atoms.
-    Then, it “stacks” the encoding by raising selected components to integer powers corresponding
-    to different orders in a harmonic expansion. The total number of atoms is determined as:
-        num_atoms = L * (L + 1) // 2,
-    where L is the stacking depth.
+    This module is a variant of the regular Herglotz positional encoding with an added
+    radial normalization factor. Each atom is initialized to activate an harmonic order such that the stacked Spherical Harmonic spectrum of the atoms activate all the frequencies up to L (if provided).
+    The total number of atoms is determined by either the stacking depth L (with num_atoms = (L+1)*(L+2)//2)
+    or an explicitly provided num_atoms value.
+
+    It introduces of the radial reference parameter ``rref``. This parameter is used to
+    normalize the transformed input such that for inputs with norm :math:`r < rref`, the atom responses are bounded 
+    (i.e. less than or equal to 1).
 
     Parameters:
-        L (int): The stacking depth, determining the highest order of the expansion.
-        input_dim (int, optional): Dimensionality of the input (default is 3).
+        L (int): The stacking depth, which defines the maximum harmonic order.
+        input_dim (int, optional): Dimensionality of the input (default: 3).
         seed (Optional[int], optional): Seed for reproducibility.
+        num_atoms (int, optional): Total number of encoding atoms. If not provided, computed from L.
+        rref (float, optional): Radial reference scale. For inputs with norm r < rref, the atom responses are constrained to be ≤ 1 (default: 1.0).
 
     Attributes:
-        L (int): The stacking depth.
-        A (torch.Tensor): Buffer containing the generated complex atoms of shape 
-            (num_atoms, input_dim), where num_atoms = L*(L+1)//2.
+        A (torch.Tensor): Buffer containing the generated complex atoms with shape (num_atoms, input_dim).
+        rref (nn.Parameter): Learnable radial reference parameter controlling the normalization.
+        w_R (nn.Parameter): Learnable scaling factors for the sine and exponential terms, initialized based on harmonic orders.
+        w_I (nn.Parameter): Learnable parameters (initialized to zeros) modulating the imaginary component.
+        b_R (nn.Parameter): Learnable real bias.
+        b_I (nn.Parameter): Learnable imaginar bias.
 
     """
-    def __init__(self, L: int, input_dim: int = 3, seed: Optional[int] = None) -> None:
-        super(StackedRegularHerglotzMapPE, self).__init__(
-            num_atoms=(L+1)*(L+2) // 2, input_dim=input_dim, seed=seed
+
+    def __init__(self, num_atoms : Optional[int] = None, L: Optional[int] = None, input_dim: int = 3, seed: Optional[int] = None, rref : float = 1.0, **kwargs) -> None:
+        if L is None and num_atoms is None:
+            raise ValueError("Either L or num_atoms must be provided.")
+        
+        super(NormalizedRegularHerglotzPE, self).__init__(
+            num_atoms= num_atoms if num_atoms is not None else (L+1)*(L+2) // 2, 
+            input_dim=input_dim, 
+            seed=seed
         )
         A = torch.stack(
             [_generate_herglotz_vector(self.input_dim, self.gen) for i in range(self.num_atoms)],
             dim=0
         )
+        L_upper = math.ceil(-3/2 + math.sqrt(2*self.num_atoms + 1/4)) # Find an upper bound for L knowing the number of atoms
         exponents = [0]
-        for l in range(1, L+1):
+        for l in range(1, L_upper+1):
             exponents.extend([l] * (l + 1))
+        exponents = torch.tensor(exponents, dtype=torch.float32)
 
-        self.L = L
         self.register_buffer("A", A)
-        self.register_buffer("exponents", torch.tensor(exponents, dtype=torch.float32))
+        self.rref = nn.Parameter(torch.tensor(rref, dtype = torch.float32))
+        self.w_R = nn.Parameter(exponents[:self.num_atoms]/math.e)
+        self.w_I = nn.Parameter(torch.zeros_like(exponents[:self.num_atoms]))
+        self.b_R = nn.Parameter(torch.zeros(self.num_atoms, dtype=torch.float32))
+        self.b_I = nn.Parameter(torch.zeros(self.num_atoms, dtype=torch.float32))
+
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         
         x = x.to(self.A.dtype)
-        x = torch.matmul(x, self.A.t())
-        x = torch.pow(x, self.exponents.view(1, -1))
-                
-        return x.real
+        ax = torch.matmul(x, self.A.t())
 
+        ax_R = ax.real
+        ax_I = ax.imag
+
+        sin_term = torch.sin(self.w_R * (ax_I / self.rref)   + self.w_I * (ax_R / self.rref)  + self.b_I)
+        exp_term = torch.exp(self.w_R * ((ax_R / self.rref) - 1/math.sqrt(2.)) - self.w_I * ((ax_I/self.rref) + 1/math.sqrt(2.)) + self.b_R)
+
+        return sin_term * exp_term
     
-    def extra_repr(self):
-        return super().extra_repr() + f", L={self.L}"
-
-        
-
 class IregularHerglotzPE(RegularHerglotzPE):
     r"""Irregular Herglotz Positional Encoding.
 
-    Extends the regular Herglotz encoding by incorporating a normalization factor based on the input norm.
-    For an input :math:`x` with Euclidean norm :math:`r = \|x\|`, the encoding is defined by
+        Extends the regular Herglotz encoding by incorporating a normalization factor based on the input norm.
+        For an input :math:`x` with Euclidean norm :math:`r = \|x\|`, the encoding is defined by
 
-    .. math::
-        z = \omega_0 \left[ \left(w_{\mathrm{real}} + i\,w_{\mathrm{imag}}\right) \frac{A\,x}{r^2}
-            + \left(b_{\mathrm{real}} + i\,b_{\mathrm{imag}}\right) \right],
-        \quad
-        \psi(x) = \frac{1}{r} \exp\bigl(-\operatorname{Im}(z)\bigr) \cos\bigl(\operatorname{Re}(z)\bigr).
+        .. math::
+            z = \omega_0 \left[ \left(w_{\mathrm{real}} + i\,w_{\mathrm{imag}}\right) \frac{A\,x}{r^2}
+                + \left(b_{\mathrm{real}} + i\,b_{\mathrm{imag}}\right) \right],
+            \quad
+            \psi(x) = \frac{1}{r} \exp\bigl(-\operatorname{Im}(z)\bigr) \cos\bigl(\operatorname{Re}(z)\bigr).
 
-    Parameters:
-        num_atoms (int): Number of atoms to generate.
-        input_dim (int): Dimensionality of the input.
-        bias (bool, optional): If True, uses learnable bias parameters (default: True).
-        seed (Optional[int], optional): Seed for reproducibility.
-        omega0 (float, optional): Frequency factor applied to the encoding (default: 1.0).
-    """
+        Parameters:
+            num_atoms (int): Number of atoms to generate.
+            input_dim (int): Dimensionality of the input.
+            bias (bool, optional): If True, uses learnable bias parameters (default: True).
+            seed (Optional[int], optional): Seed for reproducibility.
+            omega0 (float, optional): Frequency factor applied to the encoding (default: 1.0).
+        """
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
 
@@ -256,45 +274,49 @@ class IregularHerglotzPE(RegularHerglotzPE):
         x = torch.matmul(x, self.A.t())
 
         x = self.omega0 * (
-            (self.w_real + 1j * self.w_imag) * (x / (r * r))
-            + (self.bias_real + 1j * self.bias_imag)
+            (self.w_R + 1j * self.w_I) * (x / (r * r))
+            + (self.b_R + 1j * self.b_I)
         )
 
         return 1 / r * torch.exp(-x.imag) * torch.cos(x.real)
     
-class StackedIregularHerglotzMapPE(StackedRegularHerglotzMapPE):
-    """
-    Stacked Irregular Herglotz Map Positional Encoding.
+class NormalizedIrregularHerglotzPE(NormalizedRegularHerglotzPE):
+    r"""Normalized Irregular Herglotz Map Positional Encoding.
 
-    This module extends the stacked regular Herglotz encoding by incorporating a radial normalization.
-    The input is first normalized by its norm, then transformed using the pre-generated complex atoms.
-    Similar to its regular counterpart, the encoding is “stacked” by raising certain components to 
-    integer powers adjusted by the radial factor. This variant is useful when a band-limited 
-    irregular solid harmonic expansion is desired.
+    This module is a variant of the irregular Herglotz positional encoding with an added
+    radial normalization factor. Each atom is initialized to activate an harmonic order such that the stacked Spherical Harmonic spectrum of the atoms activate all the frequencies up to L (if provided).
+    The total number of atoms is determined by either the stacking depth L (with num_atoms = (L+1)*(L+2)//2)
+    or an explicitly provided num_atoms value. The atoms are defined for :math:`r > 0`.
 
     Parameters:
-        L (int): The stacking depth, determining the highest order of the expansion.
-        input_dim (int, optional): Dimensionality of the input (default is 3).
+        L (int): The stacking depth, which defines the maximum harmonic order.
+        input_dim (int, optional): Dimensionality of the input (default: 3).
         seed (Optional[int], optional): Seed for reproducibility.
+        num_atoms (int, optional): Total number of encoding atoms. If not provided, computed from L.
+        rref (float, optional): Radial reference scale. For inputs with norm r < rref, the atom responses are constrained to be ≤ 1 (default: 1.0).
 
     Attributes:
-        L (int): The stacking depth.
-        A (torch.Tensor): Buffer containing the generated complex atoms of shape 
-            (num_atoms, input_dim), where num_atoms = L*(L+1)//2.
 
+        A (torch.Tensor): Buffer containing the generated complex atoms with shape (num_atoms, input_dim).
+        rref (nn.Parameter): Learnable radial reference parameter that controls the normalization.
+        w_R (nn.Parameter): Learnable scaling factors for the sine and exponential components, set according to harmonic orders.
+        w_I (nn.Parameter): Learnable parameters (initialized to zeros) that scale the imaginary part.
+        b_R (nn.Parameter): Learnable real bias.
+        b_I (nn.Parameter): Learnable imaginar bias.
     """
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x.to(self.A.dtype)
-        r = torch.norm(x, dim=-1, keepdim=True)
-        x = torch.matmul(x, self.A.t())
+
+    def forward(self, x):
+            
+            x = x.to(self.A.dtype)
+            r = torch.norm(x, dim=-1, keepdim=True, p = 2)
+            ax = torch.matmul(x, self.A.t())
         
-        normalized = x / (r * r)
-        x = (1/r) * torch.pow(normalized, self.exponents.view(1, -1))
+            ax_R = ax.real
+            ax_I = ax.imag
+            sin_term = torch.sin(self.w_R * (ax_I / r) * (self.rref/r) + self.w_I * (ax_R / r) * (self.rref/r) +  self.b_I)
+            exp_term = torch.exp(self.w_R * ( (ax_R / r) * (self.rref/r) - 1/math.sqrt(2.) ) - self.w_I * ( ( ax_I / r) * (self.rref/r) + 1/math.sqrt(2.) ) + self.b_R)
 
-        return x.real
-
-    def extra_repr(self):
-        return super().extra_repr() + f", L={self.L}"
+            return  (1/r) * exp_term * sin_term 
 
 
 
@@ -373,8 +395,8 @@ PE2CLS = {
     "herglotz": (RegularHerglotzPE, {"bias": True, "omega0": 1.0}),
     "irregular_herglotz": (IregularHerglotzPE, {"bias": True, "omega0": 1.0}),
     "fourier": (FourierPE, {"bias": True, "omega0": 1.0}),
-    "stacked_herglotz": (StackedRegularHerglotzMapPE, {}),
-    "stacked_irregular_herglotz": (StackedIregularHerglotzMapPE, {}),
+    "normalized_herglotz": (NormalizedRegularHerglotzPE, {}),
+    "normalized_irregular_herglotz": (NormalizedIrregularHerglotzPE, {}),
 }
 
 PE2FN = ClassInstantier(PE2CLS)
@@ -384,11 +406,12 @@ def get_positional_encoding(pe: str, **kwargs) -> nn.Module:
     r"""Construct a positional encoding module.
 
     This function returns an instance of a positional encoding module corresponding to the specified
-    type. The available types are: ``"herglotz"``, ``"irregular_herglotz"``, ``"fourier"``, ``"stacked_herglotz"``, and ``"stacked_irregular_herglotz"``
+
+    type. The available types are: ``"herglotz"``, ``"irregular_herglotz"``, ``"fourier"``, ``"normalized_herglotz"`` or ``"normalized_irregular_herglotz"``.
     Additional parameters are forwarded to the constructor of the chosen module.
 
     Parameters:
-        pe (str): Identifier for the type of positional encoding. Must be one of ``"herglotz"``, ``"irregular_herglotz"``, ``"fourier"``, ``"stacked_herglotz"`` or ``"stacked_irregular_herglotz"``.
+        pe (str): Identifier for the type of positional encoding. Must be one of ``"herglotz"``, ``"irregular_herglotz"``, ``"fourier"``, ``"normalized_herglotz"`` or ``"normalized_irregular_herglotz"``
         **kwargs: Additional keyword arguments to configure the positional encoding module.
 
     Returns:
