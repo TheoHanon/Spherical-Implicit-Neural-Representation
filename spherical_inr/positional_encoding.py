@@ -236,8 +236,6 @@ class NormalizedRegularHerglotzPE(_PositionalEncoding):
         self.register_buffer("A", A)
         self.rref = nn.Parameter(torch.tensor(rref, dtype = torch.float32))
         self.w_R = nn.Parameter(exponents[:self.num_atoms]/math.e)
-        self.w_I = nn.Parameter(torch.zeros_like(exponents[:self.num_atoms]))
-        self.b_R = nn.Parameter(torch.zeros(self.num_atoms, dtype=torch.float32))
         self.b_I = nn.Parameter(torch.zeros(self.num_atoms, dtype=torch.float32))
 
         self.euler_angles = nn.Parameter(torch.zeros((self.num_atoms, 3), dtype=torch.float32))
@@ -290,8 +288,8 @@ class NormalizedRegularHerglotzPE(_PositionalEncoding):
         ax_R = ax.real
         ax_I = ax.imag
 
-        sin_term = torch.sin(self.w_R * (ax_I / self.rref - 1/math.sqrt(2.))  + self.w_I * (ax_R / self.rref - 1/math.sqrt(2.))  + self.b_I)
-        exp_term = torch.exp(self.w_R * ((ax_R / self.rref) - 1/math.sqrt(2.)) - self.w_I * ((ax_I/self.rref) - 1/math.sqrt(2.)) + self.b_R)
+        sin_term = torch.sin(self.w_R * (ax_I / self.rref) + self.b_I)
+        exp_term = torch.exp(self.w_R * ((ax_R / self.rref) - 1/math.sqrt(2.)))
 
         return sin_term * exp_term
     
@@ -370,8 +368,8 @@ class NormalizedIrregularHerglotzPE(NormalizedRegularHerglotzPE):
         
             ax_R = ax.real
             ax_I = ax.imag
-            sin_term = torch.sin(self.w_R * ((ax_I / r) * (self.rref/r) - 1/math.sqrt(2.)) + self.w_I * ((ax_R / r) * (self.rref/r) - 1/math.sqrt(2)) +  self.b_I)
-            exp_term = torch.exp(self.w_R * ( (ax_R / r) * (self.rref/r) - 1/math.sqrt(2.) ) - self.w_I * ( ( ax_I / r) * (self.rref/r) - 1/math.sqrt(2.) ) + self.b_R)
+            sin_term = torch.sin(self.w_R * ((ax_I / r) * (self.rref/r)) + self.b_I)
+            exp_term = torch.exp(self.w_R * ( (ax_R / r) * (self.rref/r) - 1/math.sqrt(2.)))
 
             return  (1/r) * exp_term * sin_term 
 
