@@ -189,6 +189,8 @@ class NormalizedRegularHerglotzPE(_PositionalEncoding):
     normalize the transformed input such that for inputs with norm :math:`r < rref`, the atom responses are bounded 
     (i.e. less than or equal to 1).
 
+    We added rotation to the atoms by introducing learnable Euler angles. The atoms are rotated in the 3D space
+
     Parameters:
         L (int): The stacking depth, which defines the maximum harmonic order.
         input_dim (int, optional): Dimensionality of the input (default: 3).
@@ -203,6 +205,7 @@ class NormalizedRegularHerglotzPE(_PositionalEncoding):
         w_I (nn.Parameter): Learnable parameters (initialized to zeros) modulating the imaginary component.
         b_R (nn.Parameter): Learnable real bias.
         b_I (nn.Parameter): Learnable imaginar bias.
+        euler_angles (nn.Parameter): Learnable Euler angles for rotating the atoms.
 
     """
 
@@ -334,6 +337,8 @@ class NormalizedIrregularHerglotzPE(NormalizedRegularHerglotzPE):
     The total number of atoms is determined by either the stacking depth L (with num_atoms = (L+1)*(L+2)//2)
     or an explicitly provided num_atoms value. The atoms are defined for :math:`r > 0`.
 
+    We added rotation to the atoms by introducing learnable Euler angles. The atoms are rotated in the 3D space
+
     Parameters:
         L (int): The stacking depth, which defines the maximum harmonic order.
         input_dim (int, optional): Dimensionality of the input (default: 3).
@@ -349,6 +354,7 @@ class NormalizedIrregularHerglotzPE(NormalizedRegularHerglotzPE):
         w_I (nn.Parameter): Learnable parameters (initialized to zeros) that scale the imaginary part.
         b_R (nn.Parameter): Learnable real bias.
         b_I (nn.Parameter): Learnable imaginar bias.
+        euler_angles (nn.Parameter): Learnable Euler angles for rotating the atoms
     """
 
     def forward(self, x):
