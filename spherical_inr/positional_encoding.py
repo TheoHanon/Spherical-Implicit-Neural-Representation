@@ -210,11 +210,16 @@ class NormalizedRegularHerglotzPE(_PositionalEncoding):
         if L is None and num_atoms is None:
             raise ValueError("Either L or num_atoms must be provided.")
         
+        if input_dim != 3:
+            raise ValueError("Input dimension must be 3.")
+
         super(NormalizedRegularHerglotzPE, self).__init__(
             num_atoms= num_atoms if num_atoms is not None else (L+1)*(L+2) // 2, 
             input_dim=input_dim, 
             seed=seed
         )
+
+
         A = torch.stack(
             [_generate_herglotz_vector(self.input_dim, self.gen) for i in range(self.num_atoms)],
             dim=0
@@ -232,11 +237,52 @@ class NormalizedRegularHerglotzPE(_PositionalEncoding):
         self.b_R = nn.Parameter(torch.zeros(self.num_atoms, dtype=torch.float32))
         self.b_I = nn.Parameter(torch.zeros(self.num_atoms, dtype=torch.float32))
 
+        self.euler_angles = nn.Parameter(torch.zeros((self.num_atoms, 3), dtype=torch.float32))
+     
+    def _rodrigues_rotation(self, vectors: torch.Tensor, euler_angles : torch.Tensor) -> torch.Tensor:
+        """
+        Rotate a batch of vectors using the Rodrigues rotation formula.
+        
+        Args:
+            vectors: Tensor of shape (num_atoms, 3) representing the vectors to rotate.
+            euler_angles: Tensor of shape (num_atoms, 3) containing the Euler angles for the rotation.
+        
+        Returns:
+            Tensor of shape (num_atoms, 3) containing the rotated vectors.
+        """
+
+        theta = euler_angles[:, 0]
+        phi   = euler_angles[:, 1]
+        gamma = euler_angles[:, 2]
+    
+        sin_theta = torch.sin(theta)
+
+        k = torch.stack([
+            sin_theta * torch.cos(phi),
+            sin_theta * torch.sin(phi),
+            torch.cos(theta),
+        ], dim=1)
+
+        cos_gamma = torch.cos(gamma).unsqueeze(1)
+        sin_gamma = torch.sin(gamma).unsqueeze(1)
+            
+        dot_k_v = (k * vectors).sum(dim=1, keepdim=True)
+        cross_k_v = torch.cross(k, vectors, dim=1)
+
+        # Rodrigues formula: v_rot = v*cosθ + (k×v)*sinθ + k*(k·v)*(1–cosθ)
+        rotated = vectors * cos_gamma + cross_k_v * sin_gamma + k * dot_k_v * (1 - cos_gamma)
+    
+        return rotated
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         
         x = x.to(self.A.dtype)
-        ax = torch.matmul(x, self.A.t())
+
+        A_rotated_real = self._rodrigues_rotation(self.A.real, self.euler_angles)
+        A_rotated_imag = self._rodrigues_rotation(self.A.imag, self.euler_angles)
+        A_rotated = torch.complex(A_rotated_real, A_rotated_imag)
+        
+        ax = torch.matmul(x, A_rotated.t())
 
         ax_R = ax.real
         ax_I = ax.imag
@@ -308,8 +354,13 @@ class NormalizedIrregularHerglotzPE(NormalizedRegularHerglotzPE):
     def forward(self, x):
             
             x = x.to(self.A.dtype)
+
+            A_rotated_real = self._rodrigues_rotation(self.A.real, self.euler_angles)
+            A_rotated_imag = self._rodrigues_rotation(self.A.imag, self.euler_angles)
+            A_rotated = torch.complex(A_rotated_real, A_rotated_imag)
+
             r = torch.norm(x, dim=-1, keepdim=True, p = 2)
-            ax = torch.matmul(x, self.A.t())
+            ax = torch.matmul(x, A_rotated.t())
         
             ax_R = ax.real
             ax_I = ax.imag
