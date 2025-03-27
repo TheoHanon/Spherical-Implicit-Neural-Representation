@@ -204,7 +204,7 @@ class NormalizedRegularHerglotzPE(_PositionalEncoding):
         w_R (nn.Parameter): Learnable scaling factors for the sine and exponential terms, initialized based on harmonic orders.
         w_I (nn.Parameter): Learnable parameters (initialized to zeros) modulating the imaginary component.
         b_R (nn.Parameter): Learnable real bias.
-        b_I (nn.Parameter): Learnable imaginar bias.
+        b_I (nn.Parameter): Learnable imaginary bias.
         euler_angles (nn.Parameter): Learnable Euler angles for rotating the atoms.
 
     """
@@ -240,49 +240,60 @@ class NormalizedRegularHerglotzPE(_PositionalEncoding):
 
         self.euler_angles = nn.Parameter(torch.zeros((self.num_atoms, 3), dtype=torch.float32))
      
-    def _rodrigues_rotation(self, vectors: torch.Tensor, euler_angles : torch.Tensor) -> torch.Tensor:
-        """
-        Rotate a batch of vectors using the Rodrigues rotation formula.
+    def _rotation_matrix(self, euler_angles: torch.Tensor) -> torch.Tensor:
+        # Unpack parameters: (θ, φ) define the axis, and γ is the rotation angle.
+        theta, phi, gamma = euler_angles[:, 0], euler_angles[:, 1], euler_angles[:, 2]
         
-        Args:
-            vectors: Tensor of shape (num_atoms, 3) representing the vectors to rotate.
-            euler_angles: Tensor of shape (num_atoms, 3) containing the Euler angles for the rotation.
-        
-        Returns:
-            Tensor of shape (num_atoms, 3) containing the rotated vectors.
-        """
-
-        theta = euler_angles[:, 0]
-        phi   = euler_angles[:, 1]
-        gamma = euler_angles[:, 2]
-    
         sin_theta = torch.sin(theta)
+        cos_theta = torch.cos(theta)
+        sin_phi   = torch.sin(phi)
+        cos_phi   = torch.cos(phi)
+        cos_gamma = torch.cos(gamma)
+        sin_gamma = torch.sin(gamma)
 
-        k = torch.stack([
-            sin_theta * torch.cos(phi),
-            sin_theta * torch.sin(phi),
-            torch.cos(theta),
-        ], dim=1)
+        # Compute the unit rotation axis using spherical coordinates.
+        kx = sin_theta * cos_phi
+        ky = sin_theta * sin_phi
+        kz = cos_theta
+        k = torch.stack([kx, ky, kz], dim=1)  # shape: (num_atoms, 3)
+        
+        # Build the skew-symmetric matrix for k.
+        zeros = torch.zeros_like(kx)
+        k_cross = torch.stack([
+            torch.stack([zeros, -kz, ky], dim=1),
+            torch.stack([kz, zeros, -kx], dim=1),
+            torch.stack([-ky, kx, zeros], dim=1)
+        ], dim=1)  # shape: (num_atoms, 3, 3)
+        
+        # Build the outer product of k with itself.
+        k = k.unsqueeze(2)  # shape: (num_atoms, 3, 1)
+        kT = k.transpose(1, 2)  # shape: (num_atoms, 1, 3)
+        outer = k @ kT  # shape: (num_atoms, 3, 3)
+        
+        # Identity matrix expanded for batch operations.
+        I = torch.eye(3, device=euler_angles.device, dtype=euler_angles.dtype).unsqueeze(0).expand(euler_angles.size(0), -1, -1)
+        
+        # Combine terms to create the rotation matrix using Rodrigues' formula.
+        cos_gamma = cos_gamma.view(-1, 1, 1)
+        sin_gamma = sin_gamma.view(-1, 1, 1)
+        R = cos_gamma * I + sin_gamma * k_cross + (1 - cos_gamma) * outer
 
-        cos_gamma = torch.cos(gamma).unsqueeze(1)
-        sin_gamma = torch.sin(gamma).unsqueeze(1)
-            
-        dot_k_v = (k * vectors).sum(dim=1, keepdim=True)
-        cross_k_v = torch.cross(k, vectors, dim=1)
-
-        # Rodrigues formula: v_rot = v*cosθ + (k×v)*sinθ + k*(k·v)*(1–cosθ)
-        rotated = vectors * cos_gamma + cross_k_v * sin_gamma + k * dot_k_v * (1 - cos_gamma)
-    
-        return rotated
+        return R
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         
         x = x.to(self.A.dtype)
 
-        A_rotated_real = self._rodrigues_rotation(self.A.real, self.euler_angles)
-        A_rotated_imag = self._rodrigues_rotation(self.A.imag, self.euler_angles)
+        R = self._rotation_matrix(self.euler_angles)  # shape: (num_atoms, 3, 3)
+    
+        # Rotate both the real and imaginary parts using batch matrix multiplication.
+        A_real = self.A.real.unsqueeze(-1)  # shape: (num_atoms, 3, 1)
+        A_imag = self.A.imag.unsqueeze(-1)
+        A_rotated_real = torch.bmm(R, A_real).squeeze(-1)
+        A_rotated_imag = torch.bmm(R, A_imag).squeeze(-1)
         A_rotated = torch.complex(A_rotated_real, A_rotated_imag)
-        
+
+    
         ax = torch.matmul(x, A_rotated.t())
 
         ax_R = ax.real
@@ -357,21 +368,26 @@ class NormalizedIrregularHerglotzPE(NormalizedRegularHerglotzPE):
 
     def forward(self, x):
             
-            x = x.to(self.A.dtype)
+        x = x.to(self.A.dtype)
 
-            A_rotated_real = self._rodrigues_rotation(self.A.real, self.euler_angles)
-            A_rotated_imag = self._rodrigues_rotation(self.A.imag, self.euler_angles)
-            A_rotated = torch.complex(A_rotated_real, A_rotated_imag)
+        R = self._rotation_matrix(self.euler_angles)  # shape: (num_atoms, 3, 3)
+    
+        # Rotate both the real and imaginary parts using batch matrix multiplication.
+        A_real = self.A.real.unsqueeze(-1)  # shape: (num_atoms, 3, 1)
+        A_imag = self.A.imag.unsqueeze(-1)
+        A_rotated_real = torch.bmm(R, A_real).squeeze(-1)
+        A_rotated_imag = torch.bmm(R, A_imag).squeeze(-1)
+        A_rotated = torch.complex(A_rotated_real, A_rotated_imag)
 
-            r = torch.norm(x, dim=-1, keepdim=True, p = 2)
-            ax = torch.matmul(x, A_rotated.t())
-        
-            ax_R = ax.real
-            ax_I = ax.imag
-            sin_term = torch.sin(self.w_R * ((ax_I / r) * (self.rref/r)) + self.b_I)
-            exp_term = torch.exp(self.w_R * ( (ax_R / r) * (self.rref/r) - 1/math.sqrt(2.)))
+        r = torch.norm(x, dim=-1, keepdim=True, p = 2)
+        ax = torch.matmul(x, A_rotated.t())
+    
+        ax_R = ax.real
+        ax_I = ax.imag
+        sin_term = torch.sin(self.w_R * ((ax_I / r) * (self.rref/r)) + self.b_I)
+        exp_term = torch.exp(self.w_R * ( (ax_R / r) * (self.rref/r) - 1/math.sqrt(2.)))
 
-            return  (1/r) * exp_term * sin_term 
+        return  (1/r) * exp_term * sin_term 
 
 
 
