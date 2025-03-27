@@ -12,7 +12,7 @@ Modules:
     transforms: Coordinate transformation utilities.
 """
 
-__version__ = "0.3.6"
+__version__ = "0.3.7"
 
 
 from .inr import *
