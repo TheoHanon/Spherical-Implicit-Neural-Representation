@@ -299,10 +299,10 @@ class NormalizedRegularHerglotzPE(_PositionalEncoding):
         ax_R = ax.real
         ax_I = ax.imag
 
-        sin_term = torch.sin(self.w_R * (ax_I / self.rref) + self.b_I)
+        cos_term = torch.cos(self.w_R * (ax_I / self.rref) + self.b_I)
         exp_term = torch.exp(self.w_R * ((ax_R / self.rref) - 1/math.sqrt(2.)))
 
-        return sin_term * exp_term
+        return cos_term * exp_term
     
 class IregularHerglotzPE(RegularHerglotzPE):
     r"""Irregular Herglotz Positional Encoding.
@@ -384,10 +384,10 @@ class NormalizedIrregularHerglotzPE(NormalizedRegularHerglotzPE):
     
         ax_R = ax.real
         ax_I = ax.imag
-        sin_term = torch.sin(self.w_R * ((ax_I / r) * (self.rref/r)) + self.b_I)
+        cos_term = torch.cos(self.w_R * ((ax_I / r) * (self.rref/r)) + self.b_I)
         exp_term = torch.exp(self.w_R * ( (ax_R / r) * (self.rref/r) - 1/math.sqrt(2.)))
 
-        return  (1/r) * exp_term * sin_term 
+        return  (1/r) * exp_term * cos_term 
 
 
 
