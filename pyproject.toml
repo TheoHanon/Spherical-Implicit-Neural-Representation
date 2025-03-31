@@ -4,7 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spherical_inr"
+<<<<<<< HEAD
 version = "0.3.15"
+=======
+version = "0.3.8"
+>>>>>>> 3e3d0e4 (Bump version to 0.3.8 in __init__.py, pyproject.toml, and setup.py)
 description = "A package for spherical positional encoding"
 readme = "README.md"
 requires-python = ">=3.6"
