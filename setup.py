@@ -5,11 +5,8 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="spherical_inr",
-<<<<<<< HEAD
+
     version="0.3.15",
-=======
-    version="0.3.9",
->>>>>>> 4c29566 (Bump version to 0.3.9 in __init__.py, pyproject.toml, and setup.py)
     author="Theo Hanon",
     author_email="theo.hanon@student.uclouvain.be",
     description="A package for spherical positional encoding",
