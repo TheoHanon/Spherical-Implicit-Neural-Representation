@@ -214,7 +214,7 @@ class NormalizedRegularHerglotzPE(_PositionalEncoding):
 
     """
 
-    def __init__(self, num_atoms : Optional[int] = None, L: Optional[int] = None, input_dim: int = 3, seed: Optional[int] = None, rref : float = 1.0, **kwargs) -> None:
+    def __init__(self, num_atoms : Optional[int] = None, L: Optional[int] = None, input_dim: int = 3, seed: Optional[int] = None, rref : float = 1.0, init: bool =  False, **kwargs) -> None:
         if L is None and num_atoms is None:
             raise ValueError("Either L or num_atoms must be provided.")
         
@@ -232,31 +232,35 @@ class NormalizedRegularHerglotzPE(_PositionalEncoding):
             [_generate_herglotz_vector(self.input_dim, self.gen) for i in range(self.num_atoms)],
             dim=0
         )
-        L_upper = math.ceil(-3/2 + math.sqrt(2*self.num_atoms + 1/4)) # Find an upper bound for L knowing the number of atoms
-        exponents = [0]
+        if init:
+            L_upper = math.ceil(-3/2 + math.sqrt(2*self.num_atoms + 1/4)) # Find an upper bound for L knowing the number of atoms
+            exponents = [0]
 
-        for l in range(1, L_upper+1):
-            exponents.extend([l] * (l + 1))
+            for l in range(1, L_upper+1):
+                exponents.extend([l] * (l + 1))
 
-        exponents = torch.tensor(exponents, dtype=torch.float32)
+            exponents = torch.tensor(exponents, dtype=torch.float32)
+
+            self.w_R = nn.Parameter(exponents[:self.num_atoms]/math.e)
+
+        else :
+            self.w_R = nn.Parameter(
+                torch.empty(self.num_atoms, dtype=torch.float32).uniform_(
+                    -1 / self.input_dim, 1 / self.input_dim, generator=self.gen
+                )
+            )
+
+        self.b_I = nn.Parameter(torch.zeros(self.num_atoms, dtype=torch.float32))
 
         self.register_buffer("A_real", A.real)
         self.register_buffer("A_imag", A.imag)
 
         self.rref = nn.Parameter(torch.tensor(rref, dtype = torch.float32))
-        self.w_R = nn.Parameter(exponents[:self.num_atoms]/math.e)
-        self.b_I = nn.Parameter(torch.zeros(self.num_atoms, dtype=torch.float32))
-
-        self.alpha_sin = nn.Parameter(torch.ones(self.num_atoms, dtype=torch.float32))
-        self.alpha_cos = nn.Parameter(torch.ones(self.num_atoms, dtype=torch.float32))
-
         self.quaternion_rotation = QuaternionRotation(self.num_atoms, self.gen)
      
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        
-
-        
+                
         A_rotated_real = self.quaternion_rotation(self.A_real)  
         A_rotated_imag = self.quaternion_rotation(self.A_imag)
         A_rotated = torch.complex(A_rotated_real, A_rotated_imag)
@@ -267,11 +271,10 @@ class NormalizedRegularHerglotzPE(_PositionalEncoding):
         ax_R = ax.real
         ax_I = ax.imag
 
-        sin_term = torch.sin(self.w_R * (ax_I / self.rref) + self.b_I)
         cos_term = torch.cos(self.w_R * (ax_I / self.rref) + self.b_I)
-        cosh_term = torch.cosh(self.w_R * (ax_R / self.rref))
+        exp_term = torch.exp(self.w_R * ((ax_R / self.rref)- 1/math.sqrt(2.)))
     
-        return (self.alpha_sin * sin_term + self.alpha_cos * cos_term) * cosh_term
+        return cos_term * exp_term
     
 class IregularHerglotzPE(RegularHerglotzPE):
     r"""Irregular Herglotz Positional Encoding.
@@ -349,12 +352,10 @@ class NormalizedIrregularHerglotzPE(NormalizedRegularHerglotzPE):
         ax_R = ax.real
         ax_I = ax.imag
 
-        sin_term = torch.sin(self.w_R * ((ax_I / r) * (self.rref/r)) + self.b_I)
         cos_term = torch.cos(self.w_R * ((ax_I / r) * (self.rref/r)) + self.b_I)
+        exp_term = torch.cosh(self.w_R * ( ( (ax_R / r) * (self.rref/r)) - 1/math.sqrt(2.)))
 
-        cosh_term = torch.cosh(self.w_R * ( (ax_R / r) * (self.rref/r)))
-
-        return  (1/r) * (self.alpha_sin * sin_term + self.alpha_cos * cos_term) * cosh_term 
+        return  (1/r) * cos_term * exp_term
 
 
 class FourierPE(_PositionalEncoding):
