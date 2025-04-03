@@ -42,28 +42,6 @@ def _generate_herglotz_vector(dim, gen : Optional[int] = None) -> torch.Tensor:
     return a_R + 1j * a_I
 
 
-def _log_cosh(x:torch.Tensor) -> torch.Tensor:
-    """
-    Computes the logarithm of the hyperbolic cosine function without the 1/2 factor .
-
-    Parameters:
-        x (torch.Tensor): Input tensor.
-
-    Returns:
-        torch.Tensor: The logarithm of the hyperbolic cosine of the input tensor.
-    """
-    return torch.abs(x) + torch.log1p(torch.exp(-2 * torch.abs(x)))
-
-def _robust_cosh(x : torch.Tensor, x_norm : float) -> torch.Tensor:
-    """
-    Computes a robust version of the hyperbolic cosine function with normalization.
-    
-    """
-    return torch.exp(_log_cosh(x) - _log_cosh(x_norm))
-
-
-
-
 class _PositionalEncoding(ABC, nn.Module):
     r"""Abstract base class for positional encoding modules.
 
@@ -291,7 +269,7 @@ class NormalizedRegularHerglotzPE(_PositionalEncoding):
 
         sin_term = torch.sin(self.w_R * (ax_I / self.rref) + self.b_I)
         cos_term = torch.cos(self.w_R * (ax_R / self.rref) + self.b_I)
-        cosh_term = _robust_cosh(self.w_R * ((ax_R / self.rref)), self.w_R / math.sqrt(2))
+        cosh_term = torch.cosh(self.w_R * (ax_R / self.rref))
     
         return (self.alpha_sin * sin_term + self.alpha_cos * cos_term) * cosh_term
     
@@ -374,7 +352,7 @@ class NormalizedIrregularHerglotzPE(NormalizedRegularHerglotzPE):
         sin_term = torch.sin(self.w_R * ((ax_I / r) * (self.rref/r)) + self.b_I)
         cos_term = torch.cos(self.w_R * ((ax_R / r) * (self.rref/r)) + self.b_I)
 
-        cosh_term = _robust_cosh(self.w_R * ( (ax_R / r) * (self.rref/r)), self.w_R / math.sqrt(2))
+        cosh_term = torch.cosh(self.w_R * (ax_R / r) * (self.rref/r))
 
         return  (1/r) * (self.alpha_sin * sin_term + self.alpha_cos * cos_term) * cosh_term 
 
