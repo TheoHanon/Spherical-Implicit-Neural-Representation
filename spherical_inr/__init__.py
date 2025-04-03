@@ -21,3 +21,4 @@ from .transforms import *
 from .mlp import *
 from .loss import *
 from .differentiation import *
+from .rotations import *

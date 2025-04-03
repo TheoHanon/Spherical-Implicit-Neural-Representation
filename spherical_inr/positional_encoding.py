@@ -336,8 +336,7 @@ class NormalizedIrregularHerglotzPE(NormalizedRegularHerglotzPE):
         A_rotated_real = self.quaternion_rotation(self.A_real)  
         A_rotated_imag = self.quaternion_rotation(self.A_imag)
         A_rotated = torch.complex(A_rotated_real, A_rotated_imag)
-        print(A_rotated.shape)
-
+        
         x = x.to(A_rotated.dtype)
         r = torch.norm(x, dim=-1, keepdim=True, p = 2)
         ax = torch.matmul(x, A_rotated.t())
