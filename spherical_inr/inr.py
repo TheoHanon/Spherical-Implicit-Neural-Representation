@@ -122,7 +122,7 @@ class HerglotzNet(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
 
-        x = sph2_to_cart3(x)
+        x = tp_to_r3(x)
         x = self.pe(x)
         x = self.mlp(x)
 
@@ -189,7 +189,7 @@ class SolidHerlotzNet(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
 
-        x = rsph2_to_cart3(x)
+        x = rtp_to_r3(x)
         x = self.pe(x)
         x = self.mlp(x)
 
