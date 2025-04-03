@@ -3,6 +3,8 @@ import torch.nn as nn
 import math
 from collections import OrderedDict
 
+from .rotations import QuaternionRotation
+
 from typing import Optional
 from abc import ABC, abstractmethod
 
@@ -175,6 +177,8 @@ class RegularHerglotzPE(_PositionalEncoding):
     def extra_repr(self) -> str:
         repr = super().extra_repr()
         return repr + f", omega0={self.omega0.item()}"
+    
+
 
 
 class NormalizedRegularHerglotzPE(_PositionalEncoding):
@@ -229,71 +233,31 @@ class NormalizedRegularHerglotzPE(_PositionalEncoding):
         )
         L_upper = math.ceil(-3/2 + math.sqrt(2*self.num_atoms + 1/4)) # Find an upper bound for L knowing the number of atoms
         exponents = [0]
+
         for l in range(1, L_upper+1):
             exponents.extend([l] * (l + 1))
+
         exponents = torch.tensor(exponents, dtype=torch.float32)
 
-        self.register_buffer("A", A)
+        self.register_buffer("A_real", A.real)
+        self.register_buffer("A_imag", A.imag)
+
         self.rref = nn.Parameter(torch.tensor(rref, dtype = torch.float32))
         self.w_R = nn.Parameter(exponents[:self.num_atoms]/math.e)
         self.b_I = nn.Parameter(torch.zeros(self.num_atoms, dtype=torch.float32))
 
-        self.euler_angles = nn.Parameter(torch.zeros((self.num_atoms, 3), dtype=torch.float32))
+        self.quaternion_rotation = QuaternionRotation(self.num_atoms, self.gen)
      
-    def _rotation_matrix(self, euler_angles: torch.Tensor) -> torch.Tensor:
-        # Unpack parameters: (θ, φ) define the axis, and γ is the rotation angle.
-        theta, phi, gamma = euler_angles[:, 0], euler_angles[:, 1], euler_angles[:, 2]
-        
-        sin_theta = torch.sin(theta)
-        cos_theta = torch.cos(theta)
-        sin_phi   = torch.sin(phi)
-        cos_phi   = torch.cos(phi)
-        cos_gamma = torch.cos(gamma)
-        sin_gamma = torch.sin(gamma)
-
-        # Compute the unit rotation axis using spherical coordinates.
-        kx = sin_theta * cos_phi
-        ky = sin_theta * sin_phi
-        kz = cos_theta
-        k = torch.stack([kx, ky, kz], dim=1)  # shape: (num_atoms, 3)
-        
-        # Build the skew-symmetric matrix for k.
-        zeros = torch.zeros_like(kx)
-        k_cross = torch.stack([
-            torch.stack([zeros, -kz, ky], dim=1),
-            torch.stack([kz, zeros, -kx], dim=1),
-            torch.stack([-ky, kx, zeros], dim=1)
-        ], dim=1)  # shape: (num_atoms, 3, 3)
-        
-        # Build the outer product of k with itself.
-        k = k.unsqueeze(2)  # shape: (num_atoms, 3, 1)
-        kT = k.transpose(1, 2)  # shape: (num_atoms, 1, 3)
-        outer = k @ kT  # shape: (num_atoms, 3, 3)
-        
-        # Identity matrix expanded for batch operations.
-        I = torch.eye(3, device=euler_angles.device, dtype=euler_angles.dtype).unsqueeze(0).expand(euler_angles.size(0), -1, -1)
-        
-        # Combine terms to create the rotation matrix using Rodrigues' formula.
-        cos_gamma = cos_gamma.view(-1, 1, 1)
-        sin_gamma = sin_gamma.view(-1, 1, 1)
-        R = cos_gamma * I + sin_gamma * k_cross + (1 - cos_gamma) * outer
-
-        return R
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         
-        x = x.to(self.A.dtype)
 
-        R = self._rotation_matrix(self.euler_angles)  # shape: (num_atoms, 3, 3)
-    
-        # Rotate both the real and imaginary parts using batch matrix multiplication.
-        A_real = self.A.real.unsqueeze(-1)  # shape: (num_atoms, 3, 1)
-        A_imag = self.A.imag.unsqueeze(-1)
-        A_rotated_real = torch.bmm(R, A_real).squeeze(-1)
-        A_rotated_imag = torch.bmm(R, A_imag).squeeze(-1)
+        
+        A_rotated_real = self.quaternion_rotation(self.A_real)  
+        A_rotated_imag = self.quaternion_rotation(self.A_imag)
         A_rotated = torch.complex(A_rotated_real, A_rotated_imag)
 
-    
+        x = x.to(A_rotated.dtype)
         ax = torch.matmul(x, A_rotated.t())
 
         ax_R = ax.real
@@ -368,17 +332,12 @@ class NormalizedIrregularHerglotzPE(NormalizedRegularHerglotzPE):
 
     def forward(self, x):
             
-        x = x.to(self.A.dtype)
 
-        R = self._rotation_matrix(self.euler_angles)  # shape: (num_atoms, 3, 3)
-    
-        # Rotate both the real and imaginary parts using batch matrix multiplication.
-        A_real = self.A.real.unsqueeze(-1)  # shape: (num_atoms, 3, 1)
-        A_imag = self.A.imag.unsqueeze(-1)
-        A_rotated_real = torch.bmm(R, A_real).squeeze(-1)
-        A_rotated_imag = torch.bmm(R, A_imag).squeeze(-1)
+        A_rotated_real = self.quaternion_rotation(self.A_real)  
+        A_rotated_imag = self.quaternion_rotation(self.A_imag)
         A_rotated = torch.complex(A_rotated_real, A_rotated_imag)
-
+        
+        x = x.to(A_rotated.dtype)
         r = torch.norm(x, dim=-1, keepdim=True, p = 2)
         ax = torch.matmul(x, A_rotated.t())
     
@@ -388,7 +347,6 @@ class NormalizedIrregularHerglotzPE(NormalizedRegularHerglotzPE):
         exp_term = torch.exp(self.w_R * ( (ax_R / r) * (self.rref/r) - 1/math.sqrt(2.)))
 
         return  (1/r) * exp_term * cos_term 
-
 
 
 class FourierPE(_PositionalEncoding):
