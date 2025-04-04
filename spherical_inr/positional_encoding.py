@@ -276,6 +276,7 @@ class NormalizedRegularHerglotzPE(_PositionalEncoding):
         cosh_term = torch.exp(self.w_R * (ax_R / self.rref) + self.b_R)
     
         return cos_term * cosh_term
+
     
 class IregularHerglotzPE(RegularHerglotzPE):
     r"""Irregular Herglotz Positional Encoding.
@@ -358,6 +359,7 @@ class NormalizedIrregularHerglotzPE(NormalizedRegularHerglotzPE):
         cosh_term = torch.cosh(self.w_R * (((ax_R / r) * (self.rref/r))) + self.b_R)
  
         return  (1/r) * cos_term * cosh_term
+
 
 
 class FourierPE(_PositionalEncoding):
