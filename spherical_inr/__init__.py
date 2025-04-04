@@ -12,11 +12,7 @@ Modules:
     transforms: Coordinate transformation utilities.
 """
 
-<<<<<<< HEAD
 __version__ = "0.3.15"
-=======
-__version__ = "0.3.9"
->>>>>>> 4c29566 (Bump version to 0.3.9 in __init__.py, pyproject.toml, and setup.py)
 
 
 from .inr import *
