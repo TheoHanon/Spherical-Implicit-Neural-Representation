@@ -353,7 +353,7 @@ class NormalizedIrregularHerglotzPE(NormalizedRegularHerglotzPE):
         ax_I = ax.imag
 
         cos_term = torch.cos(self.w_R * ((ax_I / r) * (self.rref/r)) + self.b_I)
-        exp_term = torch.cosh(self.w_R * ( ( (ax_R / r) * (self.rref/r)) - 1/math.sqrt(2.)))
+        exp_term = torch.cosh(self.w_R * (((ax_R / r) * (self.rref/r))))
 
         return  (1/r) * cos_term * exp_term
 
