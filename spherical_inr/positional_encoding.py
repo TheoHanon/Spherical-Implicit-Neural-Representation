@@ -354,12 +354,11 @@ class NormalizedIrregularHerglotzPE(NormalizedRegularHerglotzPE):
         ax_R = ax.real
         ax_I = ax.imag
 
-        cos_term = torch.cos(self.w_R * ((ax_I / r) * (self.rref/r)) + self.b_I)
+        sin_term = torch.sin(self.w_R * ((ax_I / r) * (self.rref/r)) + self.b_I)
         # exp_term = torch.cosh(self.w_R * (((ax_R / r) * (self.rref/r)) - 1/math.sqrt(2.)))
         cosh_term = torch.cosh(self.w_R * (((ax_R / r) * (self.rref/r))) + self.b_R)
  
-        return  (1/r) * cos_term * cosh_term
-
+        return  (1/r) * sin_term * cosh_term
 
 
 class FourierPE(_PositionalEncoding):
