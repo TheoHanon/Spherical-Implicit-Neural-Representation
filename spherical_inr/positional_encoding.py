@@ -251,6 +251,7 @@ class NormalizedRegularHerglotzPE(_PositionalEncoding):
             )
 
         self.b_I = nn.Parameter(torch.zeros(self.num_atoms, dtype=torch.float32))
+        self.b_R = nn.Parameter(torch.zeros(self.num_atoms, dtype=torch.float32))
 
         self.register_buffer("A_real", A.real)
         self.register_buffer("A_imag", A.imag)
@@ -272,9 +273,10 @@ class NormalizedRegularHerglotzPE(_PositionalEncoding):
         ax_I = ax.imag
 
         cos_term = torch.cos(self.w_R * (ax_I / self.rref) + self.b_I)
-        exp_term = torch.exp(self.w_R * ((ax_R / self.rref)- 1/math.sqrt(2.)))
+        cosh_term = torch.exp(self.w_R * (ax_R / self.rref) + self.b_R)
     
-        return cos_term * exp_term
+        return cos_term * cosh_term
+
     
 class IregularHerglotzPE(RegularHerglotzPE):
     r"""Irregular Herglotz Positional Encoding.
@@ -353,9 +355,11 @@ class NormalizedIrregularHerglotzPE(NormalizedRegularHerglotzPE):
         ax_I = ax.imag
 
         cos_term = torch.cos(self.w_R * ((ax_I / r) * (self.rref/r)) + self.b_I)
-        exp_term = torch.exp(self.w_R * (((ax_R / r) * (self.rref/r)) - 1/math.sqrt(2.)))
+        # exp_term = torch.cosh(self.w_R * (((ax_R / r) * (self.rref/r)) - 1/math.sqrt(2.)))
+        cosh_term = torch.cosh(self.w_R * (((ax_R / r) * (self.rref/r))) + self.b_R)
+ 
+        return  (1/r) * cos_term * cosh_term
 
-        return  (1/r) * cos_term * exp_term
 
 
 class FourierPE(_PositionalEncoding):
