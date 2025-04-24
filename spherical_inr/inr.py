@@ -38,11 +38,13 @@ class INR(nn.Module):
         pe: str = "herglotz",
         pe_kwards: Optional[dict] = None,
         activation: str = "relu",
-        activation_kwargs: dict = {},
+        activation_kwargs : Optional[dict] = None,
         bias: bool = False,
     ) -> None:
 
         super(INR, self).__init__()
+
+        activation_kwargs = activation_kwargs or {}
 
         self.pe = get_positional_encoding(
             pe,
@@ -85,7 +87,7 @@ class HerglotzNet(nn.Module):
     Attributes:
         input_dim (int): Dimensionality of the input (typically 1 or 2 for spherical coordinates).
         output_dim (int): Dimensionality of the output.
-        num_atoms (int): Number of encoding atoms (derived from the first element of inr_sizes).
+        L (int): Number of encoding atoms. L is such that `num_atoms = (L+1)**2`.  (derived from the first element of inr_sizes).
         mlp_sizes (List[int]): Hidden layer sizes of the MLP.
         bias (bool): Whether bias terms are included in the network layers.
         omega0 (float): Frequency factor used in the encoding and sine activation.
@@ -97,23 +99,25 @@ class HerglotzNet(nn.Module):
         output_dim: int,
         inr_sizes: List[int],
         bias: bool = True,
-        pe_omega0: float = 1.0,
         hidden_omega0: float = 1.0,
         seed: Optional[int] = None,
+        **kwargs,
     ) -> None:
 
         super(HerglotzNet, self).__init__()
 
         self.pe = RegularHerglotzPE(
-            num_atoms=inr_sizes[0],
+            L=inr_sizes[0],
             input_dim=3,
             bias=bias,
-            omega0=pe_omega0,
             seed=seed,
+            rotation=False,
+            init_exponents=True,
+            **kwargs,
         )
 
         self.mlp = SineMLP(
-            input_features=inr_sizes[0],
+            input_features=self.pe.num_atoms,
             output_features=output_dim,
             hidden_sizes=inr_sizes[1:],
             bias=bias,
@@ -129,8 +133,8 @@ class HerglotzNet(nn.Module):
         return x
 
 
-class SolidHerlotzNet(nn.Module):
-    r"""SolidHerlotzNet.
+class SolidHerglotzNet(nn.Module):
+    r"""SolidHerglotzNet.
 
     A neural network that integrates a spherical-to-Cartesian coordinate transformation tailored for solid harmonics,
     a Herglotz positional encoding (which can be either regular or irregular), and a sine-activated MLP.
@@ -165,7 +169,7 @@ class SolidHerlotzNet(nn.Module):
         seed: Optional[int] = None,
     ) -> None:
 
-        super(SolidHerlotzNet, self).__init__()
+        super(SolidHerglotzNet, self).__init__()
 
         if type not in ["R", "I"]:
             raise ValueError("Invalid type. Must be 'R' or 'I'.")
@@ -175,7 +179,6 @@ class SolidHerlotzNet(nn.Module):
             num_atoms=inr_sizes[0],
             input_dim=3,
             bias=bias,
-            omega0=omega0,
             seed=seed,
         )
 
@@ -250,60 +253,28 @@ class SirenNet(nn.Module):
         return x
 
 
-class HSNet(nn.Module):
-    r"""HSNet.
-
-    A hybrid network that combines a Herglotz positional encoding (either regular or irregular) with a sine-activated MLP.
-    For an input :math:`x`, the network computes its representation as
-
-    .. math::
-        \text{HSNet}(x) = \text{SineMLP}\Bigl(\psi(x)\Bigr),
-
-    with the choice of positional encoding determined by a parameter ("R" for regular, "I" for irregular).
-
-    Parameters:
-        input_dim (int): Dimensionality of the input.
-        output_dim (int): Dimensionality of the output.
-        inr_sizes (List[int]): A list where the first element specifies the number of atoms for the positional encoding and
-            subsequent elements define the hidden layer sizes of the MLP.
-        bias (bool, optional): If True, includes bias terms in the network layers (default: True).
-        first_omega0 (float, optional): Frequency factor for the positional encoding (default: 1.0).
-        hidden_omega0 (float, optional): Frequency factor for the sine activation in the MLP (default: 1.0).
-        type (str, optional): Specifies the type of Herglotz positional encoding ("R" for regular or "I" for irregular).
-        seed (Optional[int], optional): Seed for reproducibility.
-
-    Raises:
-        ValueError: If the specified type is not "R" or "I".
-    """
+class SphericalSirenNet(nn.Module):
 
     def __init__(
-        self,
-        input_dim: int,
-        output_dim: int,
-        inr_sizes: List[int],
-        bias: bool = True,
-        first_omega0: float = 1.0,
-        hidden_omega0: float = 1.0,
-        type: str = "R",
-        seed: Optional[int] = None,
+        self, 
+        output_dim : int,
+        inr_sizes : List[int],
+        bias : bool = True,
+        hidden_omega0 : float = 1.0,
+        seed : Optional[int] = None,
     ) -> None:
+    
+        
+        super(SphericalSirenNet, self).__init__()
 
-        super(HSNet, self).__init__()
-
-        if type not in ["R", "I"]:
-            raise ValueError("Invalid type. Must be 'R' or 'I'.")
-
-        self.pe = get_positional_encoding(
-            "herglotz" if type == "R" else "irregular_herglotz",
-            num_atoms=inr_sizes[0],
-            input_dim=input_dim,
-            bias=bias,
-            omega0=first_omega0,
-            seed=seed,
+    
+        self.pe = SphericalHarmonicsPE(
+            L=inr_sizes[0],
+            seed = seed,
         )
 
         self.mlp = SineMLP(
-            input_features=inr_sizes[0],
+            input_features=self.pe.num_atoms,
             output_features=output_dim,
             hidden_sizes=inr_sizes[1:],
             bias=bias,
@@ -316,3 +287,43 @@ class HSNet(nn.Module):
         x = self.mlp(x)
 
         return x
+    
+
+class SolidSphericalSirenNet(nn.Module):
+
+    def __init__(
+        self, 
+        output_dim : int,
+        inr_sizes : List[int],
+        bias : bool = True,
+        type: str = "R",
+        seed : Optional[int] = None,
+    ) -> None:
+        
+        if type not in ["R", "I"]:
+            raise ValueError("Invalid type. Must be 'R' or 'I'.")
+        
+        super(SolidSphericalSirenNet, self).__init__()
+
+        self.pe = get_positional_encoding(
+            "solid_harmonics" if type == "R" else "irregular_solid_harmonics",
+            L=inr_sizes[0],
+            seed=seed,
+        )
+
+        self.mlp = SineMLP(
+            input_features=self.pe.num_atoms,
+            output_features=output_dim,
+            hidden_sizes=inr_sizes[1:],
+            bias=bias,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+
+        x = self.pe(x)
+        x = self.mlp(x)
+
+        return x
+    
+
+
