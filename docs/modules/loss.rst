@@ -1,10 +1,7 @@
 Losses
 ======
 .. automodule:: spherical_inr.loss
-    :members:
-    :undoc-members:
-    :no-index:
-    :show-inheritance:
-    :no-inherited-members:
-    :exclude-members: forward
+   :members:
+   :undoc-members:
+   :show-inheritance:
 

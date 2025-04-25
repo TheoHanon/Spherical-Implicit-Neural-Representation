@@ -1,8 +1,6 @@
 Differentiation
 ===============
 .. automodule:: spherical_inr.differentiation
-    :members:
-    :undoc-members:
-    :no-index:
-    :show-inheritance:
-    :no-inherited-members:
+   :members:
+   :undoc-members:
+   :show-inheritance:
