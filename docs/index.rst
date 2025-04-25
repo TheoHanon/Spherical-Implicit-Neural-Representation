@@ -5,7 +5,6 @@ Spherical INR
 
 .. image:: _static/atoms.png
    :alt: Spherical INR logo
-   :align: left
    :width: 120px
 
 A PyTorch library for building **Implicit Neural Representations** on spherical and 3D domains.
@@ -50,14 +49,6 @@ Quick Example
     coords = torch.rand(8,2) * torch.tensor([3.1416, 6.2832])
     y = net(coords)  # forward on sphere
 
-Build the docs
---------------
-
-From this `docs/` directory:
-
-.. code-block:: bash
-
-   make html
 
 API Reference
 -------------

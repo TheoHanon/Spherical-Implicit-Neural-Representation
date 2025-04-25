@@ -89,7 +89,7 @@ class _PositionalEncoding(ABC, nn.Module):
 class SphericalHarmonicsPE(_PositionalEncoding):
     r"""Real Spherical Harmonics Positional Encoding.
 
-    Encodes a direction given by polar angles :math:`(\theta,\phi)\in\R^2` into
+    Encodes a direction given by polar angles :math:`(\theta,\phi)\in\mathbb{R}^2` into
     a vector of real spherical harmonics up to degree :math:`L`.  By default
     the number of output channels is :math:`(L+1)^2`, but you may override it
     via the `num_atoms` keyword.
@@ -214,7 +214,7 @@ class IrregularSolidHarmonicsPE(SphericalHarmonicsPE):
 
     r"""Irregular Solid Harmonics Positional Encoding.
 
-    Encodes a point :math:`(r,\theta,\phi)\in\R^3` into the irregular solid
+    Encodes a point :math:`(r,\theta,\phi)\in\mathbb{R}^3` into the irregular solid
     harmonics basis
 
     .. math::
@@ -229,8 +229,8 @@ class IrregularSolidHarmonicsPE(SphericalHarmonicsPE):
 
     Attributes:
         exponents (torch.Tensor, buffer):
-            Float tensor of shape `(1, num_atoms)` containing ℓ for each channel,
-            used to compute `1/r^{ℓ+1}`.
+            Float tensor of shape `(1, num_atoms)` containing :math: `\ell` for each channel,
+            used to compute :math:`1/r^{\ell+1}`.
     """
 
     def __init__(self, L:Optional[int] = None, *, num_atoms : Optional[int] = None, seed : Optional[int] = None) -> None:
@@ -256,20 +256,17 @@ class HerglotzPE(_PositionalEncoding):
     • `L`: a “stacking depth” so that `num_atoms = (L+1)**2`.  
 
     A radial reference `rref` scales the projections so that for ‖x‖<rref the
-    encoding remains bounded by 1.  If `rotation=True`, each atom is first
-    rotated by a learnable quaternion in ℝ³.
+    encoding remains bounded by 1.  
 
     The forward mapping is given by
 
     .. math::
-        \psi(x) \;=\;\sin\bigl(w_{R}\,I + b_{I}\bigr)\;\exp\!\bigl(w_{R}\,(R - c) + b_{R}\bigr)
+        \psi(x) \;=\;\sin\bigl(w_{R}\,a_{\Im} + b_{I}\bigr)\;\exp\!\bigl(w_{R}\,(a_{\Im} - a_{norm}) + b_{R}\bigr)
 
-    where
-    \[
-    R = \frac{\Re\langle x, A\rangle}{rref},\quad
-    I = \frac{\Im\langle x, A\rangle}{rref},\quad
-    c = \text{norm\_const}.
-    \]
+    where :
+        - :math:`a_{\Re} = \frac{\Re \{x^\top A\}}{rref}`.
+        - :math:`a_{\Im} = \frac{\Im\{x^\top A\}}{rref}`.
+        - :math:`a_{norm} = \texttt{norm\_const}`.
 
     The model consider input x = (x_1, ..., x_n) in R^n. However, there are not theoretical guarantees that the model will perform well in n != 3. If your input is in spherical coordinates, you must convert them in cartesian before feeding them to the model.
 
@@ -406,15 +403,14 @@ class RegularHerglotzPE(_PositionalEncoding):
     The forward mapping is given by
 
     .. math::
-        \psi(x) \;=\;\sin\bigl(w_{R}\,I + b_{I}\bigr)\;\exp\!\bigl(w_{R}\,(R - c) + b_{R}\bigr)
+        \psi(x) \;=\;\sin\bigl(w_{R}\,a_{\Im} + b_{I}\bigr)\;\exp\!\bigl(w_{R}\,(a_{\Im} - a_{norm}) + b_{R}\bigr)
 
-    where
-    \[
-    R = \frac{\Re\langle x, A\rangle}{rref},\quad
-    I = \frac{\Im\langle x, A\rangle}{rref},\quad
-    c = \text{norm\_const}.
-    \]
-    we only consider input x = (x, y, z) in R^3. If your input is in spherical coordinates, you must convert them in cartesian before feeding them to the model.
+    where :
+        - :math:`a_{\Re} = \frac{\Re \{x^\top A\}}{rref}`.
+        - :math:`a_{\Im} = \frac{\Im\{x^\top A\}}{rref}`.
+        - :math:`a_{norm} = \texttt{norm\_const}`.
+
+    We only consider input :math:`x = (x, y, z) \in \mathbb{R}^3`. If your input is in spherical coordinates, you must convert them in cartesian before feeding them to the model.
 
     Parameters:
         num_atoms (Optional[int]):
@@ -549,17 +545,15 @@ class IrregularHerglotzPE(RegularHerglotzPE):
     After (optional) quaternion rotation, we compute
 
     .. math::
-        \psi(x) \;=\; \frac{1}{r}\,\sin\bigl(w_{R}\,I + b_{I}\bigr)\;\exp\!\bigl(w_{R}\,(R - c) + b_{R}\bigr)
+        \psi(x) \;=\; \frac{1}{r}\,\sin\bigl(w_{R}\,a_{\Im} + b_{I}\bigr)\;\exp\!\bigl(w_{R}\,(a_{\Re} - a_{norm}) + b_{R}\bigr)
 
-    where
-    \[
-      r = \|x\|,\quad
-      R = \frac{\Re\langle x, A\rangle}{r}\,\frac{rref}{r},\quad
-      I = \frac{\Im\langle x, A\rangle}{r}\,\frac{rref}{r},\quad
-      c = \text{norm\_const}.
-    \]
+    where :
+        - :math:`a_{\Re} = \frac{\Re \{x^\top A\}}{r} \frac{r_{ref}}{r}`. 
+        - :math:`a_{\Im} = \frac{\Im\{x^\top A\}}{r} \frac{r_{ref}}{r}`.
+        - :math:`a_{norm} = \texttt{norm\_const}`
 
-    we only consider input x = (x, y, z) in R^3. If your input is in spherical coordinates, you must convert them in cartesian before feeding them to the model.
+
+    We only consider input :math:`x = (x, y, z) \in \mathbb{R}^3`. If your input is in spherical coordinates, you must convert them in cartesian before feeding them to the model.
 
     Here the extra factors of **1/r** ensure that as ‖x‖→∞, both the sine
     and exponential terms decay like 1/‖x‖, yielding a positional encoding
