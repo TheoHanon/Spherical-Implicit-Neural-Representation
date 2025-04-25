@@ -1,9 +1,25 @@
 import torch
 import torch.nn as nn
 
-from .transforms import *
-from .positional_encoding import *
-from .mlp import *
+from .transforms import (
+    tp_to_r3,
+    rtp_to_r3,
+)
+from .positional_encoding import (
+    get_positional_encoding,
+    HerglotzPE,
+    FourierPE,
+    SphericalHarmonicsPE,
+    RegularSolidHarmonicsPE,
+    IrregularSolidHarmonicsPE,
+    RegularHerglotzPE,
+    IrregularHerglotzPE,
+    )
+
+from .mlp import (
+    MLP,
+    SineMLP,
+)
 
 from typing import Optional, List
 
@@ -11,59 +27,98 @@ from typing import Optional, List
 class INR(nn.Module):
     r"""Implicit Neural Representation (INR).
 
-    Implements an implicit neural representation where an input :math:`x \in \mathbb{R}^{d}` is first mapped to a
-    high-dimensional feature space via a positional encoding :math:`\psi(x)` and then processed by a multilayer
-    perceptron (MLP). In mathematical form, the representation is defined as
+    Maps inputs in ℝᵈ through a positional encoding ψ onto a multilayer perceptron.
 
-    .. math::
-        \text{INR}(x) = \text{MLP}\Bigl(\psi(x)\Bigr).
+    For each input **x** of shape `(..., input_dim)`, you get an output of shape `(..., output_dim)` by
+    1. Computing **ψ(x)** via a chosen PE: shape `(..., num_atoms)`.
+    2. Passing that through an MLP with hidden sizes `mlp_sizes`.
 
     Parameters:
-        input_dim (int): Dimensionality of the input.
-        output_dim (int): Dimensionality of the output.
-        inr_sizes (List[int]): A list where the first element specifies the number of atoms for the positional encoding
-            and subsequent elements define the hidden layer sizes of the MLP.
-        pe (str, optional): Identifier for the type of positional encoding (default: "herglotz").
-        pe_kwards (Optional[dict], optional): Additional keyword arguments for configuring the positional encoding.
-        activation (str, optional): Activation function used in the MLP (default: "relu").
-        activation_kwargs (dict, optional): Additional keyword arguments for the activation function.
-        bias (bool, optional): If True, includes bias terms in the network layers (default: False).
+        num_atoms (int):
+            Number of channels (atoms) output by the positional encoding ψ.
+        mlp_sizes (List[int]):
+            Hidden‐layer sizes for the MLP. E.g. `[64, 64]` for two hidden layers of width 64.
+        output_dim (int):
+            Number of output features per input point.
+        input_dim (int, keyword-only):
+            Dimensionality of each input x. Must match the PE’s requirement:
+            - For `"herglotz"` or `"fourier"`: any positive int (commonly 2 or 3).
+            - For `"spherical_harmonics"`: **must** be 2 (θ,φ).
+        pe (str, optional):
+            Which PE to use. One of:
+            - `"herglotz"`: Herglotz map in ℝᵈ.  
+            - `"spherical_harmonics"`: real SH on S² (needs `input_dim=2`).  
+            - `"fourier"`: Fourier‐feature map.
+        activation (str, optional):
+            Activation for MLP layers, e.g. `"relu"`, `"gelu"`, etc.
+        pe_kwargs (dict, optional):
+            Passed directly into the chosen PE’s constructor—see that class’s docstring.
+        mlp_kwargs (dict, optional):
+            Extra `MLP(…)` keyword args (e.g. `bias=True`).
+        activation_kwargs (dict, optional):
+            Extra kwargs for the activation function (e.g. `{"inplace":True}`).
+
+    Input:
+        - **x**: Tensor of shape `(..., input_dim)`.
+          * For Fourier or Herglotz: any real d-vector.
+          * For SH: last two components are (θ,φ) in radians.
+    Output:
+        - Tensor of shape `(..., output_dim)`.
     """
 
     def __init__(
         self,
-        input_dim: int,
+        num_atoms: int,
+        mlp_sizes: List[int],
         output_dim: int,
-        inr_sizes: List[int],
+        *,
+        input_dim: int, 
         pe: str = "herglotz",
-        pe_kwards: Optional[dict] = None,
         activation: str = "relu",
+        pe_kwargs: Optional[dict] = None,
+        mlp_kwargs: Optional[dict] = None,
         activation_kwargs : Optional[dict] = None,
-        bias: bool = False,
     ) -> None:
 
         super(INR, self).__init__()
 
-        activation_kwargs = activation_kwargs or {}
+        if pe not in ["herglotz", "spherical_harmonics", "fourier"]:
+            raise ValueError(
+                "Invalid positional encoding type. Choose from 'herglotz', 'spherical_harmonics', or 'fourier'."
+            )
+        
+        if pe == "spherical_harmonics" and input_dim != 2:
+            raise ValueError(
+                "Spherical harmonics positional encoding requires input_dim to be 2."
+            )
+            
 
         self.pe = get_positional_encoding(
             pe,
             **{
-                "num_atoms": inr_sizes[0],
+                "num_atoms": num_atoms,
                 "input_dim": input_dim,
-                "bias": bias,
-                **(pe_kwards or {}),
+                **(pe_kwargs or {}),
             },
         )
 
-        self.mlp = MLP(
-            input_features=inr_sizes[0],
-            output_features=output_dim,
-            hidden_sizes=inr_sizes[1:],
-            bias=bias,
-            activation=activation,
-            activation_kwargs=activation_kwargs,
-        )
+        if activation == "sin":
+
+            self.mlp = SineMLP(
+                input_features=self.pe.num_atoms,
+                output_features=output_dim,
+                hidden_sizes=mlp_sizes,
+                **(mlp_kwargs or {}),
+            )
+        else:
+            self.mlp = MLP(
+                input_features=self.pe.num_atoms,
+                output_features=output_dim,
+                hidden_sizes=mlp_sizes,
+                activation=activation,
+                activation_kwargs= activation_kwargs or {},
+                **(mlp_kwargs or {}),
+            )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
 
@@ -74,54 +129,61 @@ class INR(nn.Module):
 
 
 class HerglotzNet(nn.Module):
-    r"""HerglotzNet.
+    r"""HerglotzNet on the 2-sphere.
 
-    A neural network designed for inputs defined on the 2-sphere. This network first converts the input
-    (spherical coordinates) to Cartesian coordinates, then computes a Herglotz positional encoding :math:`\psi(x)`
-    and finally processes the result through a sine-activated MLP. In summary, if :math:`x(\theta, \varphi)` denotes the
-    Cartesian coordinates derived from :math:`x`, then
+    Expects inputs in spherical coords (θ,φ), converts them to Cartesian (x,y,z),
+    then applies a 3-D Herglotz PE and a sine-activated MLP (SineMLP).
 
-    .. math::
-        \text{HerglotzNet}(x) = \text{SineMLP}\Bigl(\psi(x(\theta, \varphi))\Bigr).
+    Workflow:
+        x_sph ∈ S² ──tp_to_r3──▶ x_cart ∈ ℝ³  
+                          └─HerglotzPE─▶ ψ(x) ∈ ℝⁿ  
+                                       └─SineMLP──▶ output ∈ ℝᵒ
 
-    Attributes:
-        input_dim (int): Dimensionality of the input (typically 1 or 2 for spherical coordinates).
-        output_dim (int): Dimensionality of the output.
-        L (int): Number of encoding atoms. L is such that `num_atoms = (L+1)**2`.  (derived from the first element of inr_sizes).
-        mlp_sizes (List[int]): Hidden layer sizes of the MLP.
-        bias (bool): Whether bias terms are included in the network layers.
-        omega0 (float): Frequency factor used in the encoding and sine activation.
-        seed (Optional[int]): Seed for reproducibility.
+    Parameters:
+        L (int):
+            Harmonic order. The PE creates `num_atoms = (L+1)**2` channels.
+        mlp_sizes (List[int]):
+            Hidden layer sizes for the SineMLP.
+        output_dim (int):
+            Number of output features.
+        seed (int, optional):
+            RNG seed for reproducible atom initialization in HerglotzPE.
+        pe_kwargs (dict, optional):
+            Extra args for `HerglotzPE(…)`—see its docstring.
+        mlp_kwargs (dict, optional):
+            Extra args for `SineMLP(…)` (e.g. `omega0`).
+
+    Input:
+        - **x**: Tensor `(..., 2)` of spherical coords (θ ∈ [0,π], φ ∈ [0,2π)).
+    Output:
+        - Tensor `(..., output_dim)`.
     """
 
     def __init__(
         self,
+        L : int, 
+        mlp_sizes: List[int],
         output_dim: int,
-        inr_sizes: List[int],
-        bias: bool = True,
-        hidden_omega0: float = 1.0,
+        *,
         seed: Optional[int] = None,
-        **kwargs,
+        pe_kwargs: Optional[dict] = None,
+        mlp_kwargs: Optional[dict] = None,
     ) -> None:
 
         super(HerglotzNet, self).__init__()
 
-        self.pe = RegularHerglotzPE(
-            L=inr_sizes[0],
+        self.pe = HerglotzPE(
+            L=L,
             input_dim=3,
-            bias=bias,
             seed=seed,
-            rotation=False,
-            init_exponents=True,
-            **kwargs,
+            **(pe_kwargs or {}),
         )
 
         self.mlp = SineMLP(
             input_features=self.pe.num_atoms,
             output_features=output_dim,
-            hidden_sizes=inr_sizes[1:],
-            bias=bias,
-            omega0=hidden_omega0,
+            hidden_sizes=mlp_sizes,
+            **(mlp_kwargs or {}),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -133,61 +195,62 @@ class HerglotzNet(nn.Module):
         return x
 
 
-class SolidHerglotzNet(nn.Module):
-    r"""SolidHerglotzNet.
+class RegularHerglotzNet(nn.Module):
+    r"""Regular Solid HerglotzNet.
 
-    A neural network that integrates a spherical-to-Cartesian coordinate transformation tailored for solid harmonics,
-    a Herglotz positional encoding (which can be either regular or irregular), and a sine-activated MLP.
-    The network accepts input in a spherical coordinate system and computes its representation as
+    Like HerglotzNet but uses **regular** solid harmonics → features grow like rˡ.
+    Inputs are full spherical coords (r,θ,φ) so that features encode radial and angular info.
 
-    .. math::
-        \text{SolidHerlotzNet}(x) = \text{SineMLP}\Bigl(\psi(x(r, \theta, \varphi))\Bigr),
-
-    where :math:`x(r, \theta, \varphi)` denotes the Cartesian coordinates derived from the spherical input.
-    The type of positional encoding is chosen via a parameter ("R" for regular, "I" for irregular).
+    Workflow:
+        x_sph ∈ ℝ³ ──rtp_to_r3──▶ x_cart ∈ ℝ³  
+                            └─RegularSolidHerglotzPE─▶ ψ(x)  
+                                                     └─SineMLP──▶ output
 
     Parameters:
-        output_dim (int): Dimensionality of the output.
-        inr_sizes (List[int]): A list where the first element specifies the number of atoms for the positional encoding and
-            subsequent elements define the hidden layer sizes of the MLP.
-        bias (bool, optional): If True, includes bias terms in the network layers (default: True).
-        omega0 (float, optional): Frequency factor applied to both the positional encoding and the MLP (default: 1.0).
-        type (str, optional): Specifies the type of Herglotz positional encoding ("R" for regular or "I" for irregular).
-        seed (Optional[int], optional): Seed for reproducibility.
+        L (int):
+            Harmonic order. `num_atoms=(L+1)**2`.
+        mlp_sizes (List[int]):
+            Hidden layer widths for the SineMLP.
+        output_dim (int):
+            Dimensionality of the network’s final output.
+        seed (int, optional):
+            RNG seed for PE.
+        pe_kwargs (dict, optional):
+            Extra args for `RegularHerglotzPE(…)`.
+        mlp_kwargs (dict, optional):
+            Extra args for `SineMLP(…)`.
 
-    Raises:
-        ValueError: If the specified type is not "R" or "I".
+    Input:
+        - **x**: Tensor `(..., 3)` as (r,θ,φ).
+    Output:
+        - Tensor `(..., output_dim)`.
     """
 
     def __init__(
         self,
+        L :int,
+        mlp_sizes: List[int],
         output_dim: int,
-        inr_sizes: List[int],
-        bias: bool = True,
-        omega0: float = 1.0,
-        type: str = "R",
+        *,
         seed: Optional[int] = None,
+        pe_kwargs: Optional[dict] = None,
+        mlp_kwargs: Optional[dict] = None,
     ) -> None:
 
-        super(SolidHerglotzNet, self).__init__()
+        super(RegularHerglotzNet, self).__init__()
 
-        if type not in ["R", "I"]:
-            raise ValueError("Invalid type. Must be 'R' or 'I'.")
-
-        self.pe = get_positional_encoding(
-            "herglotz" if type == "R" else "irregular_herglotz",
-            num_atoms=inr_sizes[0],
-            input_dim=3,
-            bias=bias,
+    
+        self.pe = RegularHerglotzPE(
+            L=L,
             seed=seed,
+            ** (pe_kwargs or {}),
         )
 
         self.mlp = SineMLP(
-            input_features=inr_sizes[0],
+            input_features=self.pe.num_atoms,
             output_features=output_dim,
-            hidden_sizes=inr_sizes[1:],
-            bias=bias,
-            omega0=omega0,
+            hidden_sizes=mlp_sizes,
+            **(mlp_kwargs or {}),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -199,50 +262,178 @@ class SolidHerglotzNet(nn.Module):
         return x
 
 
-class SirenNet(nn.Module):
-    r"""SirenNet.
+class IrregularHerglotzNet(nn.Module):
+    r"""Irregular Solid HerglotzNet.
 
-    A neural network that employs a Fourier-based positional encoding to compute the representation,
-    followed by a sine-activated MLP as described in the SIREN architecture. For an input :math:`x`, the
-    representation is computed as
+    Identical to RegularHerglotzNet but uses **irregular** solid harmonics → features decay like 1/rˡ⁺¹.
 
-    .. math::
-        \text{SirenNet}(x) = \text{SineMLP}\Bigl(\psi(x)\Bigr),
-
-    where the positional encoding :math:`\psi(x)` is obtained via a learnable linear mapping and a sinusoidal activation.
+    Use this when you want the encoding to vanish at infinity.
 
     Parameters:
-        input_dim (int): Dimensionality of the input.
-        output_dim (int): Dimensionality of the output.
-        inr_sizes (List[int]): A list where the first element specifies the number of atoms for the positional encoding
-            and subsequent elements define the hidden layer sizes of the MLP.
-        bias (bool, optional): If True, includes bias terms in the network layers (default: True).
-        first_omega0 (float, optional): Frequency factor for the Fourier positional encoding (default: 1.0).
-        hidden_omega0 (float, optional): Frequency factor for the sine activation in the MLP (default: 1.0).
+        L (int): Harmonic order → `num_atoms=(L+1)**2`.
+        mlp_sizes (List[int]): Hidden widths for SineMLP.
+        output_dim (int): Output feature count.
+        seed (int, optional): RNG seed.
+        pe_kwargs (dict, optional): Extra for `IrregularHerglotzPE`.
+        mlp_kwargs (dict, optional): Extra for `SineMLP`.
+
+    Input / Output: same shapes as RegularHerglotzNet.
     """
 
     def __init__(
         self,
-        input_dim: int,
+        L :int,
+        mlp_sizes: List[int],
         output_dim: int,
-        inr_sizes: List[int],
-        bias: bool = True,
-        first_omega0: float = 1.0,
-        hidden_omega0: float = 1.0,
+        *,
+        seed: Optional[int] = None,
+        pe_kwargs: Optional[dict] = None,
+        mlp_kwargs: Optional[dict] = None,
+    ) -> None:
+
+        super(IrregularHerglotzNet, self).__init__()
+
+    
+        self.pe = IrregularHerglotzPE(
+            L=L,
+            seed=seed,
+            ** (pe_kwargs or {}),
+        )
+
+        self.mlp = SineMLP(
+            input_features=self.pe.num_atoms,
+            output_features=output_dim,
+            hidden_sizes=mlp_sizes,
+            **(mlp_kwargs or {}),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+
+        x = rtp_to_r3(x)
+        x = self.pe(x)
+        x = self.mlp(x)
+
+        return x
+
+class SirenNet(nn.Module):
+    r"""Standard SIREN network with learnable Fourier PE.
+
+    Applies a FourierPE followed by a sine-activated MLP (SineMLP).
+
+    Workflow:
+        x ∈ ℝᵈ ──FourierPE(num_atoms, ω₀)─▶ ψ(x) ∈ ℝⁿ  
+                          └─SineMLP(ω₀)──▶ output ∈ ℝᵒ
+
+    Parameters:
+        num_atoms (int):
+            Channels for the FourierPE.
+        mlp_sizes (List[int]):
+            Hidden layer sizes for the SineMLP.
+        output_dim (int):
+            Final output dimensionality.
+        input_dim (int, keyword-only):
+            Dimensionality d of x.
+        pe_kwargs (dict, optional):
+            Extra args for `FourierPE(…)` (e.g. `omega0`).
+        mlp_kwargs (dict, optional):
+            Extra args for `SineMLP(…)` (e.g. `omega0`).
+
+    Input:
+        - **x**: Tensor `(..., input_dim)`.
+    Output:
+        - Tensor `(..., output_dim)`.
+    """
+
+    def __init__(
+        self,
+        num_atoms: int,
+        mlp_sizes: List[int],
+        output_dim: int,
+        *,
+        input_dim: int,
+        pe_kwargs: Optional[dict] = None,
+        mlp_kwargs: Optional[dict] = None,
     ) -> None:
 
         super(SirenNet, self).__init__()
 
         self.pe = FourierPE(
-            num_atoms=inr_sizes[0], input_dim=input_dim, bias=bias, omega0=first_omega0
+            num_atoms=num_atoms, input_dim=input_dim, **(pe_kwargs or {})
         )
 
         self.mlp = SineMLP(
-            input_features=inr_sizes[0],
+            input_features=self.pe.num_atoms,
             output_features=output_dim,
-            hidden_sizes=inr_sizes[1:],
-            bias=bias,
-            omega0=hidden_omega0,
+            hidden_sizes=mlp_sizes,
+            **(mlp_kwargs or {}),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+
+        x = self.pe(x)
+        x = self.mlp(x)
+
+        return x
+    
+class HerglotzSirenNet(nn.Module):
+    r"""HerglotzSirenNet.
+
+    Cartesian‐coordinate SIREN that uses a learnable Herglotz positional encoding
+    in place of the usual Fourier features.
+
+    Workflow:
+        x ∈ ℝᵈ                          # user‐supplied Cartesian input
+          └──HerglotzPE(num_atoms,d)──▶ ψ(x) ∈ ℝⁿ
+                              └─SineMLP──▶ output ∈ ℝᵒ
+
+    Parameters:
+        num_atoms (int):
+            Number of atoms (channels) in the HerglotzPE.  
+            The PE buffer “A” will have shape `(num_atoms, input_dim)`.
+        mlp_sizes (List[int]):
+            Hidden‐layer widths for the sine‐activated MLP.  
+            e.g. `[64,64]` for two hidden layers of 64 units each.
+        output_dim (int):
+            Dimensionality of the final output (o).
+        input_dim (int, keyword-only):
+            Dimensionality d of each input vector x.  
+            Must match the HerglotzPE’s `input_dim` requirement (commonly 3).
+        pe_kwargs (Optional[dict]):
+            Extra keyword args forwarded to `HerglotzPE(…)`.  
+            See `HerglotzPE` docstring for full parameter list.
+        mlp_kwargs (Optional[dict]):
+            Extra keyword args forwarded to `SineMLP(…)` (e.g. `omega0`).
+
+    Input:
+        - **x**: Tensor of shape `(..., input_dim)`, in Cartesian coords.
+    Output:
+        - Tensor of shape `(..., output_dim)`.
+    """
+
+    def __init__(
+        self,
+        num_atoms: int,
+        mlp_sizes: List[int],
+        output_dim: int,
+        *,
+        input_dim: int,
+        pe_kwargs: Optional[dict] = None,
+        mlp_kwargs: Optional[dict] = None,
+    ) -> None:
+
+        super(HerglotzSirenNet, self).__init__()
+
+        self.pe = HerglotzPE(
+            num_atoms=num_atoms, 
+            input_dim=input_dim, 
+            **(pe_kwargs or {})
+        )
+
+        self.mlp = SineMLP(
+            input_features=self.pe.num_atoms,
+            output_features=output_dim,
+            hidden_sizes=mlp_sizes,
+            **(mlp_kwargs or {}),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -255,33 +446,68 @@ class SirenNet(nn.Module):
 
 class SphericalSirenNet(nn.Module):
 
+    r"""SphericalSirenNet.
+
+    Angular SIREN on the 2‐sphere: encodes (θ,φ) via real spherical harmonics,
+    then processes with a sine‐activated MLP.
+
+    Workflow:
+        x_sph ∈ S²         # (θ,φ) in radians
+            └─SphericalHarmonicsPE──▶ ψ(x) ∈ ℝⁿ
+                                        └─SineMLP──▶ output ∈ ℝᵒ
+
+    Parameters:
+        L (int):
+            Maximum spherical‐harmonic degree. PE will output `(L+1)**2` channels.
+        mlp_sizes (List[int]):
+            Hidden‐layer widths for the SineMLP.
+        output_dim (int):
+            Dimensionality of the network’s final output.
+        seed (int, optional):
+            RNG seed for reproducible behavior in `SphericalHarmonicsPE`.
+        pe_kwargs (Optional[dict]):
+            Extra keyword args for `SphericalHarmonicsPE(…)`.
+        mlp_kwargs (Optional[dict]):
+            Extra keyword args for `SineMLP(…)`.
+
+    Input:
+        - **x**: Tensor of shape `(..., 2)`, representing (θ,φ).
+    Output:
+        - Tensor of shape `(..., output_dim)`.
+    """
+
     def __init__(
         self, 
+        L : int,
+        mlp_sizes : List[int],
         output_dim : int,
-        inr_sizes : List[int],
-        bias : bool = True,
-        hidden_omega0 : float = 1.0,
+        *,
         seed : Optional[int] = None,
+        pe_kwargs : Optional[dict] = None,
+        mlp_kwargs : Optional[dict] = None,
     ) -> None:
     
-        
         super(SphericalSirenNet, self).__init__()
 
-    
         self.pe = SphericalHarmonicsPE(
-            L=inr_sizes[0],
+            L=L,
             seed = seed,
+            **(pe_kwargs or {}),
         )
 
         self.mlp = SineMLP(
             input_features=self.pe.num_atoms,
             output_features=output_dim,
-            hidden_sizes=inr_sizes[1:],
-            bias=bias,
-            omega0=hidden_omega0,
+            hidden_sizes=mlp_sizes,
+            **(mlp_kwargs or {}),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+
+        if x.shape[-1] != 2:
+            raise ValueError(
+                f"Expected input shape (..., 2) for spherical coordinates (θ, φ), but got {x.shape}."
+            )
 
         x = self.pe(x)
         x = self.mlp(x)
@@ -289,37 +515,143 @@ class SphericalSirenNet(nn.Module):
         return x
     
 
-class SolidSphericalSirenNet(nn.Module):
+class IrregularSolidSirenNet(nn.Module):
+
+    r"""IrregularSolidSirenNet.
+
+    Solid‐harmonic SIREN on ℝ³ with **irregular** (decaying) basis functions.
+
+    Workflow:
+        x_sph ∈ ℝ³           # (r,θ,φ)
+          └──rtp_to_r3──▶ x_cart ∈ ℝ³
+                            └─IrregularSolidHarmonicsPE──▶ ψ(x) ∈ ℝⁿ
+                                                           └─SineMLP──▶ output ∈ ℝᵒ
+
+    Parameters:
+        L (int):
+            Maximum harmonic degree; `num_atoms=(L+1)**2`.
+        mlp_sizes (List[int]):
+            Hidden‐layer widths for the SineMLP.
+        output_dim (int):
+            Dimensionality of the final output.
+        seed (int, optional):
+            RNG seed for `IrregularSolidHarmonicsPE`.
+        pe_kwargs (Optional[dict]):
+            Extra keyword args forwarded to `IrregularSolidHarmonicsPE(…)`.
+        mlp_kwargs (Optional[dict]):
+            Extra keyword args forwarded to `SineMLP(…)`.
+
+    Input:
+        - **x**: Tensor of shape `(..., 3)`, representing (r,θ,φ).
+    Output:
+        - Tensor of shape `(..., output_dim)`.
+    """
 
     def __init__(
         self, 
+        L : int,
+        mlp_sizes : List[int],
         output_dim : int,
-        inr_sizes : List[int],
-        bias : bool = True,
-        type: str = "R",
+        *,
         seed : Optional[int] = None,
+        pe_kwargs : Optional[dict] = None,
+        mlp_kwargs : Optional[dict] = None,
     ) -> None:
         
-        if type not in ["R", "I"]:
-            raise ValueError("Invalid type. Must be 'R' or 'I'.")
-        
-        super(SolidSphericalSirenNet, self).__init__()
 
-        self.pe = get_positional_encoding(
-            "solid_harmonics" if type == "R" else "irregular_solid_harmonics",
-            L=inr_sizes[0],
+        super(IrregularSolidSirenNet, self).__init__()
+
+        self.pe = IrregularSolidHarmonicsPE(
+            L=L,
             seed=seed,
+            ** (pe_kwargs or {}),
         )
 
         self.mlp = SineMLP(
             input_features=self.pe.num_atoms,
             output_features=output_dim,
-            hidden_sizes=inr_sizes[1:],
-            bias=bias,
+            hidden_sizes=mlp_sizes,
+            **(mlp_kwargs or {}),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = rtp_to_r3(x)
+        x = self.pe(x)
+        x = self.mlp(x)
 
+        return x
+
+
+class RegularSolidSirenNet(nn.Module):
+
+    r"""RegularSolidSirenNet.
+
+    Solid‐harmonic SIREN on ℝ³ using **regular** solid harmonics (features grow like rˡ).
+
+    Workflow:
+        x_sph ∈ ℝ³           # input spherical coords (r, θ, φ)
+          └──rtp_to_r3──▶ x_cart ∈ ℝ³
+                            └─RegularSolidHarmonicsPE(L)──▶ ψ(x) ∈ ℝⁿ
+                                                            └─SineMLP──▶ output ∈ ℝᵒ
+
+    Parameters:
+        L (int):
+            Maximum spherical‐harmonic degree.  
+            The PE will produce `num_atoms = (L+1)**2` channels.
+        mlp_sizes (List[int]):
+            Sizes of hidden layers for the sine‐activated MLP (e.g. `[64, 64]`).
+        output_dim (int):
+            Dimensionality o of the network’s final output.
+        seed (int, optional):
+            Random‐seed for initializing the solid‐harmonic basis in the PE.
+        pe_kwargs (dict, optional):
+            Additional keyword arguments forwarded to `RegularSolidHarmonicsPE`, such as:
+              - `num_atoms` (if you wish to override `(L+1)**2`)
+              - `seed` (alternative seeding)
+            See `RegularSolidHarmonicsPE` docstring for the full API.
+        mlp_kwargs (dict, optional):
+            Additional keyword arguments forwarded to `SineMLP`, such as:
+              - `bias=True` to include biases
+              - `omega0` to change the sine‐frequency in hidden layers
+            See `SineMLP` docstring for details.
+
+    Input:
+        - **x**: Tensor of shape `(..., 3)`, representing spherical coordinates  
+                  `(r ≥ 0, θ ∈ [0,π], φ ∈ [0,2π))`.
+
+    Output:
+        - Tensor of shape `(..., output_dim)`, the MLP’s prediction per input point.
+    """
+
+    def __init__(
+        self, 
+        L :int,
+        mlp_sizes : List[int],
+        output_dim : int,
+        *,
+        seed : Optional[int] = None,
+        pe_kwargs : Optional[dict] = None,
+        mlp_kwargs : Optional[dict] = None,
+    ) -> None:
+        
+    
+        super(RegularSolidSirenNet, self).__init__()
+
+        self.pe = RegularSolidHarmonicsPE(
+            L=L,
+            seed=seed,
+            ** (pe_kwargs or {}),
+        )
+
+        self.mlp = SineMLP(
+            input_features=self.pe.num_atoms,
+            output_features=output_dim,
+            hidden_sizes=mlp_sizes,
+            **(mlp_kwargs or {}),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = rtp_to_r3(x)
         x = self.pe(x)
         x = self.mlp(x)
 

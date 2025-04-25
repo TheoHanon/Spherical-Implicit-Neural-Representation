@@ -4,15 +4,18 @@ import math
 import warnings
 from collections import OrderedDict
 
+
 from .rotations import QuaternionRotation
 from .third_party.locationencoder.sh import SH
 
 from typing import Optional, List
 from abc import ABC, abstractmethod
+import inspect
 
 __all__ = [
     "RegularHerglotzPE",
     "IrregularHerglotzPE",
+    "HerglotzPE",
     "FourierPE",
     "SphericalHarmonicsPE",
     "RegularSolidHarmonicsPE",
@@ -21,7 +24,7 @@ __all__ = [
 ]
 
 
-def _generate_herglotz_vector(dim, gen : Optional[int] = None) -> torch.Tensor:
+def _generate_herglotz_vector(dim, gen : Optional[torch.Generator] = None) -> torch.Tensor:
     """
     Generates a complex vector (atom) for the Herglotz encoding.
 
@@ -29,8 +32,8 @@ def _generate_herglotz_vector(dim, gen : Optional[int] = None) -> torch.Tensor:
     normalizing them, and ensuring the imaginary part is orthogonal to the real part.
 
     Parameters:
-        input_dim (int): The dimension of the vector (2 or 3).
-        generator (Optional[torch.Generator]): A random number generator for reproducibility. Default is None.
+        dim (int): The dimension of the vector.
+        gen (Optional[torch.Generator]): A random number generator for reproducibility. Default is None.
 
     Returns:
         torch.Tensor: A complex tensor representing the atom (dtype=torch.complex64).
@@ -42,7 +45,7 @@ def _generate_herglotz_vector(dim, gen : Optional[int] = None) -> torch.Tensor:
     a_I -= 2 * torch.dot(a_I, a_R) * a_R  # Orthogonalize a_I with respect to a_R
     a_I /= (2**0.5) * torch.norm(a_I)
 
-    return a_R + 1j * a_I
+    return torch.complex(a_R, a_I)
 
 
 class _PositionalEncoding(ABC, nn.Module):
@@ -146,13 +149,12 @@ class SphericalHarmonicsPE(_PositionalEncoding):
             
             num_atoms = (L + 1)**2
 
-        else :
-            L = math.ceil(math.sqrt(num_atoms)) - 1
+        L_upper = L if L is not None else math.ceil(math.sqrt(num_atoms)) - 1
         
         super(SphericalHarmonicsPE, self).__init__(num_atoms, input_dim = input_dim, seed=seed)
 
-        self.ms_list : List[int] = [m for l in range(L+1) for m in range(-l, l+1)][:self.num_atoms]
-        self.ls_list : List[int] = [l for l in range(L+1) for m in range(-l, l+1)][:self.num_atoms]
+        self.ms_list : List[int] = [m for l in range(L_upper+1) for m in range(-l, l+1)][:self.num_atoms]
+        self.ls_list : List[int] = [l for l in range(L_upper+1) for m in range(-l, l+1)][:self.num_atoms]
 
     
     def forward(self, x : torch.Tensor) -> torch.Tensor:
@@ -198,7 +200,8 @@ class RegularSolidHarmonicsPE(SphericalHarmonicsPE):
     def __init__(self, L:Optional[int] = None, *, num_atoms : Optional[int] = None, seed : Optional[int] = None) -> None:
         super(RegularSolidHarmonicsPE, self).__init__(L = L, num_atoms=num_atoms, seed = seed, input_dim = 3) 
 
-        exps = torch.cat([torch.full((l+1,), l) for l in range(L+1)])[:self.num_atoms]
+        L_upper = L if L is not None else math.ceil(math.sqrt(self.num_atoms)) - 1
+        exps = torch.cat([torch.full((2*l+1,), l) for l in range(L_upper+1)])[:self.num_atoms]
         self.register_buffer("exponents", exps.view(1, -1))
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -207,7 +210,7 @@ class RegularSolidHarmonicsPE(SphericalHarmonicsPE):
         return ylm * r.unsqueeze(-1).pow(self.exponents)  
 
 
-class IrregularSolidHarmonicsPE(RegularSolidHarmonicsPE):
+class IrregularSolidHarmonicsPE(SphericalHarmonicsPE):
 
     r"""Irregular Solid Harmonics Positional Encoding.
 
@@ -232,8 +235,8 @@ class IrregularSolidHarmonicsPE(RegularSolidHarmonicsPE):
 
     def __init__(self, L:Optional[int] = None, *, num_atoms : Optional[int] = None, seed : Optional[int] = None) -> None:
         super(IrregularSolidHarmonicsPE, self).__init__(L = L, num_atoms=num_atoms, seed = seed, input_dim = 3) 
-
-        exps = torch.cat([torch.full((l+1,), l) for l in range(L+1)])[:self.num_atoms]
+        L_upper = L if L is not None else math.ceil(math.sqrt(self.num_atoms)) - 1
+        exps = torch.cat([torch.full((2*l+1,), l) for l in range(L_upper+1)])[:self.num_atoms]
         self.register_buffer("exponents", exps.view(1, -1))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -241,12 +244,12 @@ class IrregularSolidHarmonicsPE(RegularSolidHarmonicsPE):
         ylm = super().forward(x[..., 1:3])
         return ylm * r.unsqueeze(-1).pow(-(self.exponents + 1))
 
-        
-class RegularHerglotzPE(_PositionalEncoding):
-    r"""Regular Herglotz Map Positional Encoding.
 
-    This module implements the **regular** Herglotz map with optional quaternion‐based rotation. Each atom is a
-    complex 3D vector whose real and imaginary parts are unit‐length and orthogonal,
+class HerglotzPE(_PositionalEncoding):
+    r"""Herglotz Positional Encoding.
+
+    This module implements the Herglotz map with optional quaternion‐based rotation. Each atom is a
+    complex n dim vector whose real and imaginary parts are unit‐length and orthogonal,
     initialized either by specifying:
 
     • `num_atoms`: an explicit total count, **or**  
@@ -268,11 +271,13 @@ class RegularHerglotzPE(_PositionalEncoding):
     c = \text{norm\_const}.
     \]
 
+    The model consider input x = (x_1, ..., x_n) in R^n. However, there are not theoretical guarantees that the model will perform well in n != 3. If your input is in spherical coordinates, you must convert them in cartesian before feeding them to the model.
+
     Parameters:
         num_atoms (Optional[int]):
             Explicit number of atoms; if set, overrides `L`.
         input_dim (int, optional):
-            Dimensionality of the input (must be 3). Default: 3.
+            Dimensionality of the input. Default: 3.
         *  
         bias (bool, optional):
             If True, includes bias terms for the sine and exponential components. Default: True.
@@ -316,6 +321,146 @@ class RegularHerglotzPE(_PositionalEncoding):
                  L: Optional[int] = None, 
                  seed: Optional[int] = None, 
                  rref : float = 1.0, 
+                 init_exponents: bool =  True, 
+                 normalize : bool = True,) -> None:
+        
+        if num_atoms is not None and L is not None:
+            warnings.warn(
+                "Both `num_atoms` and `L` were given; ignoring `L` and using the explicit `num_atoms`.",
+                UserWarning
+            )
+        elif num_atoms is None:
+
+            if L is None:
+                raise ValueError("Either `num_atoms` or `L` must be provided.")
+            
+            num_atoms = (L + 1)**2
+
+        super(HerglotzPE, self).__init__(
+            num_atoms= num_atoms, 
+            input_dim=input_dim, 
+            seed=seed
+        )
+    
+        A = torch.stack(
+            [_generate_herglotz_vector(self.input_dim, self.gen) for i in range(self.num_atoms)],
+            dim=0
+        )
+        self.register_buffer("A", A)
+
+        self.w_R = nn.Parameter(torch.zeros(self.num_atoms))
+
+        if init_exponents:
+            L_upper = math.ceil(math.sqrt(self.num_atoms)) - 1
+            exps = torch.tensor(
+                [l for l in range(L_upper+1) for _ in range(2*l + 1)],
+                dtype=torch.float32,
+                device=self.w_R.device
+            ) / math.e
+            exps = exps[:self.num_atoms]
+            with torch.no_grad():
+                self.w_R.copy_(exps)
+        else:
+            nn.init.uniform_(self.w_R, -1 / self.input_dim, 1 / self.input_dim)
+        
+        if bias :
+            self.b_I = nn.Parameter(torch.zeros(self.num_atoms))
+            self.b_R = nn.Parameter(torch.zeros(self.num_atoms))
+        else:
+            self.register_buffer("b_I", torch.zeros(self.num_atoms))
+            self.register_buffer("b_R", torch.zeros(self.num_atoms))
+
+        norm_const = 0. if not normalize else 1.0 / math.sqrt(2)
+        self.register_buffer("norm_const_buf", torch.tensor(norm_const))
+        self.register_buffer("rref_buf", torch.tensor(rref))
+         
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+
+        x_c = x.to(self.A.dtype)
+        ax = torch.matmul(x_c, self.A.t())
+
+        ax_R = ax.real / self.rref_buf
+        ax_I = ax.imag / self.rref_buf
+
+        sin_term = torch.sin(self.w_R * ax_I  + self.b_I)
+        exp_term = torch.exp(self.w_R * (ax_R - self.norm_const_buf) + self.b_R)
+    
+        return sin_term * exp_term
+
+
+        
+class RegularHerglotzPE(_PositionalEncoding):
+    r"""Regular Herglotz Map Positional Encoding.
+
+    This module implements the **regular** Herglotz map with optional quaternion‐based rotation. Each atom is a
+    complex 3D vector whose real and imaginary parts are unit‐length and orthogonal,
+    initialized either by specifying:
+
+    • `num_atoms`: an explicit total count, **or**  
+    • `L`: a “stacking depth” so that `num_atoms = (L+1)**2`.  
+
+    A radial reference `rref` scales the projections so that for ‖x‖<rref the
+    encoding remains bounded by 1.  If `rotation=True`, each atom is first
+    rotated by a learnable quaternion in ℝ³.
+
+    The forward mapping is given by
+
+    .. math::
+        \psi(x) \;=\;\sin\bigl(w_{R}\,I + b_{I}\bigr)\;\exp\!\bigl(w_{R}\,(R - c) + b_{R}\bigr)
+
+    where
+    \[
+    R = \frac{\Re\langle x, A\rangle}{rref},\quad
+    I = \frac{\Im\langle x, A\rangle}{rref},\quad
+    c = \text{norm\_const}.
+    \]
+    we only consider input x = (x, y, z) in R^3. If your input is in spherical coordinates, you must convert them in cartesian before feeding them to the model.
+
+    Parameters:
+        num_atoms (Optional[int]):
+            Explicit number of atoms; if set, overrides `L`.
+        *  
+        bias (bool, optional):
+            If True, includes bias terms for the sine and exponential components. Default: True.
+        L (Optional[int], keyword-only):
+            Initialize a number of atoms equals to the number of spherical harmonics up to order L.  Used when `num_atoms` is None.
+        seed (Optional[int], keyword-only):
+            RNG seed for reproducible atom initialization.
+        rref (float, keyword-only):
+            Radial reference scale; for ‖x‖<rref, outputs ≤ 1. Default: 1.0.
+        init_exponents (bool, keyword-only):
+            If True, initialize `w_R` such that it activates the first L spherical harmonic orders (moments included). Recommended to use with `L` specified and `normalize` set to True.
+        normalize (bool, keyword-only):
+            If False, uses 1/√2 as the internal normalization constant; else 0. Bounding up the atoms by <= exp(b_R) if r <=rref. Default: True.
+        rotation (bool, keyword-only):
+            If True, applies per-atom quaternion rotation. Default: True.
+
+    Attributes:
+        A (Tensor, buffer):
+            Complex atoms of shape `(num_atoms, 3)`, dtype `torch.complex64`.
+        rref (Tensor, buffer):
+            Radial reference.
+        w_R (Parameter):
+            Frequency weights for both sine and exponential terms.
+        b_I (Parameter):
+            Bias for the sine term.
+        b_R (Parameter):
+            Bias for the exponential term.
+        norm_const_buf (Tensor, buffer):
+            Normalization constant (`0.0` or `1/√2`).
+        quaternion_rotation (Module or callable):
+            Applies each atom’s quaternion in `forward()`.
+    """
+
+
+
+    def __init__(self, 
+                 num_atoms : Optional[int] = None, 
+                 *,
+                 bias : bool = True,
+                 L: Optional[int] = None, 
+                 seed: Optional[int] = None, 
+                 rref : float = 1.0, 
                  init_exponents: bool =  False, 
                  normalize : bool = True,
                  rotation : bool = True,) -> None:
@@ -331,16 +476,10 @@ class RegularHerglotzPE(_PositionalEncoding):
                 raise ValueError("Either `num_atoms` or `L` must be provided.")
             
             num_atoms = (L + 1)**2
-
-        if input_dim != 3:
-            warnings.warn(
-                "Input dimension is not 3; disabling rotation.",
-            )
-            rotation = False
         
         super(RegularHerglotzPE, self).__init__(
             num_atoms= num_atoms, 
-            input_dim=input_dim, 
+            input_dim=3, 
             seed=seed
         )
     
@@ -400,7 +539,7 @@ class RegularHerglotzPE(_PositionalEncoding):
 
         
 class IrregularHerglotzPE(RegularHerglotzPE):
-    r"""Normalized Irregular Herglotz Map Positional Encoding.
+    r"""Irregular Herglotz Map Positional Encoding.
 
     This variant of the Herglotz map applies a **1/‖x‖** decay so that features
     smoothly vanish at large radius. All initialization options
@@ -420,6 +559,8 @@ class IrregularHerglotzPE(RegularHerglotzPE):
       c = \text{norm\_const}.
     \]
 
+    we only consider input x = (x, y, z) in R^3. If your input is in spherical coordinates, you must convert them in cartesian before feeding them to the model.
+
     Here the extra factors of **1/r** ensure that as ‖x‖→∞, both the sine
     and exponential terms decay like 1/‖x‖, yielding a positional encoding
     that vanishes at infinity.
@@ -427,8 +568,6 @@ class IrregularHerglotzPE(RegularHerglotzPE):
     Parameters:
         num_atoms (Optional[int]):
             Explicit number of atoms; if set, overrides `L`.
-        input_dim (int, optional):
-            Dimensionality of the input (must be 3). Default: 3.
         *  
         L (Optional[int], keyword-only):
             Stacking depth. Used when `num_atoms` is None.
@@ -514,9 +653,6 @@ class FourierPE(_PositionalEncoding):
         x = self.Omega(x)
         return torch.sin(self.omega0 * x)
 
-    def extra_repr(self) -> str:
-        repr = super().extra_repr()
-        return repr + f", omega0={self.omega0.item()}"
 
 
 class ClassInstantier(OrderedDict):
@@ -538,8 +674,9 @@ class ClassInstantier(OrderedDict):
 
 
 PE2CLS = {
-    "herglotz": (RegularHerglotzPE, {}),
+    "regular_herglotz": (RegularHerglotzPE, {}),
     "irregular_herglotz": (IrregularHerglotzPE, {}),
+    "herglotz": (HerglotzPE, {"init_exponents" : False}),
     "fourier": (FourierPE, {}),
     "spherical_harmonics": (SphericalHarmonicsPE, {}),
     "solid_harmonics": (RegularSolidHarmonicsPE, {}),
@@ -554,12 +691,12 @@ def get_positional_encoding(pe: str, **kwargs) -> nn.Module:
 
     This function returns an instance of a positional encoding module corresponding to the specified
 
-    type. The available types are: ``"herglotz"``, ``"irregular_herglotz"``, ``"fourier"``, ``"spherical_harmonics"``, ``"solid_harmonics"`` and ``"irregular_solid_harmonics"``.
+    type. The available types are: ``"herglotz"``, ``"solid_herglotz"``, ``"irregular_solid_herglotz"``, ``"fourier"``, ``"spherical_harmonics"``, ``"solid_harmonics"``, and ``"irregular_solid_harmonics"``.
     Additional parameters are forwarded to the constructor of the chosen module.
 
     Parameters:
-        pe (str): Identifier for the type of positional encoding. Must be one of ``"herglotz"``, ``"irregular_herglotz"``, ``"fourier"``, ``"spherical_harmonics"``, ``"solid_harmonics"`` and ``"irregular_solid_harmonics"``
-        **kwargs: Additional keyword arguments to configure the positional encoding module.
+        pe (str): Identifier for the type of positional encoding. Must be one of ``"herglotz"``, ``"solid_herglotz"``, ``"irregular_solid_herglotz"``, ``"fourier"``, ``"spherical_harmonics"``, ``"solid_harmonics"``, and ``"irregular_solid_harmonics"``.
+        **kwargs: Additional keyword arguments to configure the positional encoding module. Drop any kwargs not in the constructor.
 
     Returns:
         nn.Module: An instance of the specified positional encoding module.
@@ -571,4 +708,10 @@ def get_positional_encoding(pe: str, **kwargs) -> nn.Module:
     if pe not in PE2CLS:
         raise ValueError(f"Invalid positional encoding: {pe}")
 
-    return PE2FN[pe](**kwargs)
+    cls, defaults = PE2CLS[pe]
+    sig = inspect.signature(cls.__init__)
+    # drop any kwargs not in the constructor
+    filtered = {k: v for k, v in kwargs.items() if k in sig.parameters}
+
+    return cls(**defaults, **filtered)
+

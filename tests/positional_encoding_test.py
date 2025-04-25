@@ -1,105 +1,127 @@
 import unittest
 import torch
 
-
-from spherical_inr import (
-    PositionalEncoding,
+from spherical_inr.positional_encoding import (
+    _PositionalEncoding,
+    get_positional_encoding,
+    HerglotzPE,
     RegularHerglotzPE,
-    IregularHerglotzPE,
+    IrregularHerglotzPE,
     FourierPE,
+    SphericalHarmonicsPE,
+    RegularSolidHarmonicsPE,
+    IrregularSolidHarmonicsPE,
 )
 
 
-class TestPositionalEncodingAbstract(unittest.TestCase):
-    def test_cannot_instantiate_abstract_class(self):
-        # Attempting to instantiate PositionalEncoding directly should fail.
+class TestAbstractBase(unittest.TestCase):
+    def test_cannot_instantiate(self):
         with self.assertRaises(TypeError):
-            _ = PositionalEncoding(num_atoms=4, input_dim=3)
+            _ = _PositionalEncoding(num_atoms=4, input_dim=3)
+
+
+class TestGetPositionalEncoding(unittest.TestCase):
+    def test_valid_names(self):
+        for name, cls in [
+            ("herglotz", HerglotzPE),
+            ("regular_herglotz", RegularHerglotzPE),
+            ("irregular_herglotz", IrregularHerglotzPE),
+            ("fourier", FourierPE),
+            ("spherical_harmonics", SphericalHarmonicsPE),
+            ("solid_harmonics", RegularSolidHarmonicsPE),
+            ("irregular_solid_harmonics", IrregularSolidHarmonicsPE),
+        ]:
+            pe = get_positional_encoding(name, num_atoms=4, input_dim=3, L=1, seed=0, omega0=1.0)
+            self.assertIsInstance(pe, cls)
+
+    def test_invalid_name(self):
+        with self.assertRaises(ValueError):
+            get_positional_encoding("no_such_pe")
 
 
 class TestHerglotzPE(unittest.TestCase):
-    def setUp(self):
-        self.num_atoms = 5
-        self.input_dim = 3  # Valid: >= 2
-        self.omega0 = 2.0
-        self.bias = True
-        self.seed = 42
+    def test_forward_num_atoms(self):
+        pe = HerglotzPE(num_atoms=5, input_dim=3, bias=False, seed=0)
+        x = torch.randn(2, 3)
+        y = pe(x)
+        self.assertEqual(y.shape, (2, 5))
 
-    def test_invalid_input_dim(self):
-        # Input dimension below 2 should raise ValueError.
-        with self.assertRaises(ValueError):
-            _ = RegularHerglotzPE(
-                num_atoms=self.num_atoms,
-                input_dim=1,
-                bias=self.bias,
-                omega0=self.omega0,
-                seed=self.seed,
-            )
-
-    def test_forward_output_shape_and_type(self):
-        pe = RegularHerglotzPE(
-            num_atoms=self.num_atoms,
-            input_dim=self.input_dim,
-            bias=self.bias,
-            omega0=self.omega0,
-            seed=self.seed,
-        )
-        batch_size = 4
-        # Create an input tensor of shape (batch_size, input_dim)
-        x = torch.randn(batch_size, self.input_dim)
-        output = pe(x)
-        # The forward method returns a real-valued tensor
-        self.assertEqual(output.shape, (batch_size, self.num_atoms))
-        self.assertTrue(torch.is_floating_point(output))
+    def test_forward_L(self):
+        L = 2
+        num_atoms = (L+1)**2
+        pe = HerglotzPE(L=L, input_dim=3, bias=True, seed=1)
+        x = torch.randn(3, 3)
+        y = pe(x)
+        self.assertEqual(y.shape, (3, num_atoms))
 
 
-class TestIregularHerglotzPE(unittest.TestCase):
-    def setUp(self):
-        self.num_atoms = 4
-        self.input_dim = 3  # Valid: >=2
-        self.omega0 = 1.5
-        self.bias = False
-        self.seed = 123
+class TestRegularHerglotzPE(unittest.TestCase):
+    def test_forward_L(self):
+        L = 1
+        num_atoms = (L+1)**2
+        pe = RegularHerglotzPE(L=L, seed=2)
+        x = torch.randn(4, 3)
+        y = pe(x)
+        self.assertEqual(y.shape, (4, num_atoms))
 
-    def test_forward_output_shape_and_type(self):
-        pe = IregularHerglotzPE(
-            num_atoms=self.num_atoms,
-            input_dim=self.input_dim,
-            bias=self.bias,
-            omega0=self.omega0,
-            seed=self.seed,
-        )
-        batch_size = 6
-        # Use nonzero input to avoid division by zero.
-        x = torch.randn(batch_size, self.input_dim) + 1.0
-        output = pe(x)
-        self.assertEqual(output.shape, (batch_size, self.num_atoms))
-        self.assertTrue(torch.is_floating_point(output))
+
+class TestIrregularHerglotzPE(unittest.TestCase):
+    def test_forward_L(self):
+        L = 1
+        num_atoms = (L+1)**2
+        pe = IrregularHerglotzPE(L=L, seed=3)
+        x = torch.randn(5, 3).abs() + 1e-1  # avoid r=0
+        y = pe(x)
+        self.assertEqual(y.shape, (5, num_atoms))
 
 
 class TestFourierPE(unittest.TestCase):
-    def setUp(self):
-        self.num_atoms = 7
-        self.input_dim = 4
-        self.bias = True
-        self.omega0 = 3.0
-        self.seed = 7
+    def test_forward(self):
+        pe = FourierPE(num_atoms=6, input_dim=4, bias=True, seed=4, omega0=2.0)
+        x = torch.randn(3, 4)
+        y = pe(x)
+        self.assertEqual(y.shape, (3, 6))
+        self.assertTrue(torch.all(y <= 1) and torch.all(y >= -1))
 
-    def test_forward_output_shape_and_range(self):
-        pe = FourierPE(
-            num_atoms=self.num_atoms,
-            input_dim=self.input_dim,
-            bias=self.bias,
-            omega0=self.omega0,
-            seed=self.seed,
-        )
-        batch_size = 8
-        x = torch.randn(batch_size, self.input_dim)
-        output = pe(x)
-        self.assertEqual(output.shape, (batch_size, self.num_atoms))
-        # Since FourierPE applies torch.sin, output should be in [-1, 1]
-        self.assertTrue(torch.all(output <= 1.0))
-        self.assertTrue(torch.all(output >= -1.0))
+
+class TestSphericalHarmonicsPE(unittest.TestCase):
+    def test_forward_L(self):
+        L = 2
+        num_atoms = (L+1)**2
+        pe = SphericalHarmonicsPE(L=L, seed=5)
+        theta = torch.rand(7) * torch.pi
+        phi = torch.rand(7) * 2 * torch.pi
+        x = torch.stack([theta, phi], dim=-1)
+        y = pe(x)
+        self.assertEqual(y.shape, (7, num_atoms))
+
+
+class TestRegularSolidHarmonicsPE(unittest.TestCase):
+    def test_forward_L(self):
+        L = 1
+        num_atoms = (L+1)**2
+        pe = RegularSolidHarmonicsPE(L=L, seed=6)
+        # (r, θ, φ)
+        r = torch.rand(5)
+        theta = torch.rand(5) * torch.pi
+        phi = torch.rand(5) * 2 * torch.pi
+        x = torch.stack([r, theta, phi], dim=-1)
+        y = pe(x)
+        self.assertEqual(y.shape, (5, num_atoms))
+
+
+class TestIrregularSolidHarmonicsPE(unittest.TestCase):
+    def test_forward_L(self):
+        L = 1
+        num_atoms = (L+1)**2
+        pe = IrregularSolidHarmonicsPE(L=L, seed=7)
+        r = torch.rand(5) + 1e-1
+        theta = torch.rand(5) * torch.pi
+        phi = torch.rand(5) * 2 * torch.pi
+        x = torch.stack([r, theta, phi], dim=-1)
+        y = pe(x)
+        self.assertEqual(y.shape, (5, num_atoms))
+
 
 
 if __name__ == "__main__":
