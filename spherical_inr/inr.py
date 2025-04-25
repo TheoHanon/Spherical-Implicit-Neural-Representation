@@ -64,6 +64,7 @@ class INR(nn.Module):
           * For SH: last two components are (θ,φ) in radians.
     Output:
         - Tensor of shape `(..., output_dim)`.
+
     """
 
     def __init__(
@@ -157,6 +158,7 @@ class HerglotzNet(nn.Module):
         - **x**: Tensor `(..., 2)` of spherical coords (θ ∈ [0,π], φ ∈ [0,2π)).
     Output:
         - Tensor `(..., output_dim)`.
+
     """
 
     def __init__(
@@ -224,6 +226,7 @@ class RegularHerglotzNet(nn.Module):
         - **x**: Tensor `(..., 3)` as (r,θ,φ).
     Output:
         - Tensor `(..., output_dim)`.
+
     """
 
     def __init__(
@@ -278,6 +281,7 @@ class IrregularHerglotzNet(nn.Module):
         mlp_kwargs (dict, optional): Extra for `SineMLP`.
 
     Input / Output: same shapes as RegularHerglotzNet.
+
     """
 
     def __init__(
@@ -342,6 +346,7 @@ class SirenNet(nn.Module):
         - **x**: Tensor `(..., input_dim)`.
     Output:
         - Tensor `(..., output_dim)`.
+
     """
 
     def __init__(
@@ -408,6 +413,7 @@ class HerglotzSirenNet(nn.Module):
         - **x**: Tensor of shape `(..., input_dim)`, in Cartesian coords.
     Output:
         - Tensor of shape `(..., output_dim)`.
+
     """
 
     def __init__(
@@ -474,6 +480,7 @@ class SphericalSirenNet(nn.Module):
         - **x**: Tensor of shape `(..., 2)`, representing (θ,φ).
     Output:
         - Tensor of shape `(..., output_dim)`.
+
     """
 
     def __init__(
@@ -516,7 +523,6 @@ class SphericalSirenNet(nn.Module):
     
 
 class IrregularSolidSirenNet(nn.Module):
-
     r"""IrregularSolidSirenNet.
 
     Solid‐harmonic SIREN on ℝ³ with **irregular** (decaying) basis functions.
@@ -540,11 +546,12 @@ class IrregularSolidSirenNet(nn.Module):
             Extra keyword args forwarded to `IrregularSolidHarmonicsPE(…)`.
         mlp_kwargs (Optional[dict]):
             Extra keyword args forwarded to `SineMLP(…)`.
-
+            
     Input:
         - **x**: Tensor of shape `(..., 3)`, representing (r,θ,φ).
     Output:
         - Tensor of shape `(..., output_dim)`.
+
     """
 
     def __init__(
@@ -583,7 +590,6 @@ class IrregularSolidSirenNet(nn.Module):
 
 
 class RegularSolidSirenNet(nn.Module):
-
     r"""RegularSolidSirenNet.
 
     Solid‐harmonic SIREN on ℝ³ using **regular** solid harmonics (features grow like rˡ).
@@ -605,22 +611,16 @@ class RegularSolidSirenNet(nn.Module):
         seed (int, optional):
             Random‐seed for initializing the solid‐harmonic basis in the PE.
         pe_kwargs (dict, optional):
-            Additional keyword arguments forwarded to `RegularSolidHarmonicsPE`, such as:
-              - `num_atoms` (if you wish to override `(L+1)**2`)
-              - `seed` (alternative seeding)
+            Additional keyword arguments forwarded to `RegularSolidHarmonicsPE`.
             See `RegularSolidHarmonicsPE` docstring for the full API.
         mlp_kwargs (dict, optional):
-            Additional keyword arguments forwarded to `SineMLP`, such as:
-              - `bias=True` to include biases
-              - `omega0` to change the sine‐frequency in hidden layers
-            See `SineMLP` docstring for details.
-
+            Additional keyword arguments forwarded to `SineMLP`.
     Input:
-        - **x**: Tensor of shape `(..., 3)`, representing spherical coordinates  
-                  `(r ≥ 0, θ ∈ [0,π], φ ∈ [0,2π))`.
+        - **x**: Tensor of shape `(..., 3)`, representing spherical coordinates `(r ≥ 0, θ ∈ [0,π], φ ∈ [0,2π))`.  
 
     Output:
         - Tensor of shape `(..., output_dim)`, the MLP’s prediction per input point.
+
     """
 
     def __init__(

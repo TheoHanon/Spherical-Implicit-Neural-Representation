@@ -1,19 +1,31 @@
 # Spherical-Implicit-Neural-Representation
+![Project Overview](images/atoms.png)
+
+
 [![Documentation Status](https://readthedocs.org/projects/spherical-implicit-neural-representation/badge/?version=latest)](https://spherical-implicit-neural-representation.readthedocs.io/en/latest/)
 
 
+*Spherical-Implicit-Neural-Representation* unifies Fourier features (SIREN) [1], pure Spherical Harmonics (SphericalSirenNet) [3], and our learnable Herglotz‐map encodings [2] into a single PyTorch toolbox. Build implicit neural representations on:
 
-*Spherical-Implicit-Neural-Representation* is a Python package for constructing spherical implicit neural representations using Herglotz-based positional encoding. It provides flexible modules for processing spherical data along with customizable positional encoding layers and regularization tools.
+- **S²** (HerglotzNet, SphericalSirenNet)
+- **Volumetric data** in ℝ³ with radial basis (solid harmonics)
+- **Generic ℝᵈ inputs** via FourierPE, HerglotzPE
 
-## Installation
+> **Coordinate conventions**:
+>
+> - **Angles**: θ∈[0,π], φ∈[0,2π) in radians.
+> - **Full spherical**: (r≥0, θ, φ).
+> - **2D polar**: (r,θ) or angle-only (θ).
 
-Install the package from PyPI:
+
+
+## 📦 Installation
 
 ```bash
 pip install spherical-inr
 ```
 
-Or install the development version locally:
+*OR for development:*
 
 ```bash
 git clone https://github.com/yourusername/spherical_inr.git
@@ -21,131 +33,81 @@ cd spherical_inr
 pip install -e .
 ```
 
-## Getting Started
 
-### Instantiate HerglotzNet
+## 📦 Features
 
-The `HerglotzNet` module is designed for (θ, φ) coordinate data. Here’s an example of how to instantiate and use it:
+- **General INR** (`INR`): Plug-and-play Cartesian implicit networks with your choice of  
+  Fourier / Herglotz / Spherical-Harmonic features + flexible MLP backbones.  
+- **Sphere-only nets** (`HerglotzNet`, `SphericalSirenNet`): For data on \(S^2\), encode \((\theta,\phi)\) directly.  
+- **Solid-harmonic nets** (`RegularSolid*` / `IrregularSolid*`): Capture radial & angular variation in \(\mathbb R^3\).  
+- **SIREN**-style variants (`SirenNet`, `HerglotzSirenNet`): Learnable Fourier / Herglotz features + sine-activated MLPs.  
+- **Standalone PEs**: `FourierPE`, `HerglotzPE`, `SphericalHarmonicsPE`, `RegularSolidHarmonicsPE`, `IrregularSolidHarmonicsPE`, …  
+- **Transforms**: Handy spherical↔cartesian converters (`tp_to_r3`, `rtp_to_r3`, `rt_to_r2`, `t_to_r2`, …).  
+- **Regularization**: Laplacian losses for smoothness (`CartesianLaplacianLoss`, `SphericalLaplacianLoss`, …).  
+- **Differentation** : Cartesian & Spherical Differential Operators (`spherical_gradient`, `spherical_laplacian`, `spherical_divergence`, `cartesian_gradient`, ...).
+
+## 🚀 Quickstart
+
+### 1️⃣ HerglotzNet on S²
 
 ```python
 import torch
-import spherical_inr as sph
+from spherical_inr import HerglotzNet
 
-# Parameters for HerglotzNet
-output_dim = 1
-inr_sizes = [16] + 3 * [32]  # [PE size] + (hidden layers * hidden features)
-omega0 = 1.0
-seed = 42
-
-
-# Instantiate the network NOTE : # HNET is defined for (θ, φ) coordinates only
-model = sph.HerglotzNet(
-    output_dim=output_dim,
-    inr_sizes=inr_sizes,
-    bias=True,
-    pe_omega0=omega0,
-    seed=seed
+# Create a HerglotzNet: harmonic order L → num_atoms=(L+1)**2
+model = HerglotzNet(
+    L=3,                # spherical-harmonic degree
+    mlp_sizes=[64,64],  # two hidden layers of width 64
+    output_dim=1,       # scalar output per direction
+    seed=0,
 )
-
-# Example
-dummy_input = torch.randn(4, 2)
-output = model(dummy_input)
-print(output)
+# Random spherical angles (θ,φ)
+x = torch.rand(16,2) * torch.tensor([torch.pi, 2*torch.pi])
+y = model(x)
+print(y.shape)  # → (16,1)
 ```
 
-### Generic Cartesian INR
-
-You can also create a customized Cartesian implicit neural representation (INR). For example:
+### 2️⃣ Generic Cartesian INR
 
 ```python
-import torch
-import spherical_inr as sph
+from spherical_inr import INR
 
-# INR parameters
-input_dim = 3
-output_dim = 1
-inr_sizes = [100] + 3 * [100]
-pe = "fourier"
-activation = "sin"
-bias = False
-
-# Instantiate a generic Cartesian INR
-inr = sph.INR(
-    input_dim=input_dim,
-    output_dim=output_dim,
-    inr_sizes=inr_sizes,
-    pe=pe,
-    activation=activation,
-    bias=bias
+# Fourier‐feature INR with sin‐activation (SIREN style)
+inr = INR(
+    num_atoms=128,          # Fourier channels
+    mlp_sizes=[256,256],    # two hidden layers
+    output_dim=3,           # 3D output
+    input_dim=3,            # 3D Cartesian inputs
+    pe="fourier",         # FourierPE
+    activation="sin",      # sine‐activated MLP
+    pe_kwargs={"omega0":10},
 )
+x = torch.randn(10,3)
+y = inr(x)
 ```
 
-To incorporate Laplacian regularization into your loss function:
+### 3️⃣ Solid‐harmonic INR in ℝ³
 
 ```python
+from spherical_inr import RegularSolidHarmonicsPE, SineMLP
 import torch
-from spherical_inr.loss import CartesianLaplacianLoss
 
-laplacian_loss = CartesianLaplacianLoss()
-mse_loss = torch.nn.MSELoss()
-
-def loss_fn(target, y_pred, y_reg, x_reg):
-    reg = laplacian_loss(y_reg, x_reg)
-    mse = mse_loss(target, y_pred)
-    return reg + mse
+# Regular solid harmonics encode radial+angular growth r^ℓ
+pe = RegularSolidHarmonicsPE(L=2, seed=1)
+mlp = SineMLP(input_features=pe.num_atoms, output_features=1, hidden_sizes=[64])
+# Example input: (r,θ,φ)
+x_sph = torch.stack([torch.rand(5), torch.rand(5)*torch.pi, torch.rand(5)*2*torch.pi], dim=-1)
+x_cart = rtp_to_r3(x_sph)
+x = pe(x_cart)
+y = mlp(x)
 ```
 
-Then train your model as usual.
-
-### Instantiate and Use a Positional Encoding
-
-You can also directly instantiate a positional encoding module and integrate it into your own PyTorch model. For example:
-
-```python
-import torch
-import torch.nn as nn
-import spherical_inr as sph
-
-# Example model using a positional encoding
-class MyModel(nn.Module):
-    def __init__(self, num_atoms, input_dim, output_dim, bias, omega0, seed):
-        super().__init__()
-        self.pe = sph.RegularHerglotzPE(
-            num_atoms=num_atoms,
-            input_dim=input_dim,
-            bias=bias,
-            omega0=omega0,
-            seed=seed
-        )
-        self.linear = nn.Linear(num_atoms, output_dim)
-        
-    def forward(self, x):
-        x = self.pe(x)
-        return self.linear(x)
-
-# Instantiate the model
-model = MyModel(
-    num_atoms=50,
-    input_dim=10,
-    output_dim=5,
-    bias=True,
-    omega0=1.0,
-    seed=42,
-)
-
-dummy_input = torch.randn(4, 10)
-output = model(dummy_input)
-print(output)
-```
-
-
-
+---
 
 ## 📚 References
 
-1. Théo Hanon, Nicolas Mil-Homens Cavaco, John Kiely, Laurent Jacques,  
-   *Herglotz-NET: Implicit Neural Representation of Spherical Data with Harmonic Positional Encoding*,  
-   arXiv preprint, 2025.  
-   [arXiv:2502.13777](https://arxiv.org/abs/2502.13777)
+1. **Sitzmann, M., Martel, J., Berg, R., Lindell, D. B., & Wetzstein, G.** (2021). *Implicit Neural Representations with Periodic Activation Functions (SIREN)*. Advances in Neural Information Processing Systems (NeurIPS).  [https://arxiv.org/abs/2006.09661](https://arxiv.org/abs/2006.09661)
+2. **Hanon, T., et al.** (2025). *Herglotz-NET: Implicit Neural Representation of Spherical Data with Harmonic Positional Encoding*. arXiv preprint arXiv:2502.13777. [https://arxiv.org/abs/2502.13777](https://arxiv.org/abs/2502.13777)  
+3. **Rußwurm, M., Klemmer, K., Rolf, E., Zbinden, R., & Tuia, D.** (2024). *Geographic Location Encoding with Spherical Harmonics and Sinusoidal Representation Networks*. arXiv preprint arXiv:2310.06743. [https://arxiv.org/abs/2310.06743](https://arxiv.org/abs/2310.06743)  
 
-   
+
