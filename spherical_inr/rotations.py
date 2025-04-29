@@ -42,8 +42,9 @@ class QuaternionRotation(nn.Module):
         
 
         super().__init__()
-        self.quaternions = nn.Parameter(torch.randn(n_quaternions, 4, generator=generator))
-
+        q0 = torch.zeros((n_quaternions, 4))
+        q0[:, 0] = 1.0                       
+        self.quaternions = nn.Parameter(q0)  
 
     def forward(self, vectors: torch.Tensor) -> torch.Tensor:
 
