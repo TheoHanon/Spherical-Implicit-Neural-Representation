@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="spherical_inr",
-    version="0.4.1",
+    version="0.4.2",
     author="Theo Hanon",
     author_email="theo.hanon@student.uclouvain.be",
     description="A package for spherical positional encoding",
