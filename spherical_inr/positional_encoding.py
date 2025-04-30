@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.nn import functional as F
 import math
 import warnings
 from collections import OrderedDict
@@ -292,10 +293,12 @@ class HerglotzPE(_PositionalEncoding):
             If True, applies per-atom quaternion rotation. Default: True.
 
     Attributes:
-        A (Tensor, buffer):
-            Complex atoms of shape `(num_atoms, 3)`, dtype `torch.complex64`.
-        rref (Tensor, buffer):
-            Radial reference.
+        A_real (Tensor, buffer):
+            Real part of the complex atoms, shape `(num_atoms, input_dim)`.
+        A_imag (Tensor, buffer):
+            Imaginary part of the complex atoms, shape `(num_atoms, input_dim)`.
+        rref_inv_buf (Tensor, buffer):
+            Reciprocal of the radial reference scale.
         w_R (Parameter):
             Frequency weights for both sine and exponential terms.
         b_I (Parameter):
@@ -304,8 +307,6 @@ class HerglotzPE(_PositionalEncoding):
             Bias for the exponential term.
         norm_const_buf (Tensor, buffer):
             Normalization constant (`0.0` or `1/√2`).
-        quaternion_rotation (Module or callable):
-            Applies each atom’s quaternion in `forward()`.
     """
 
 
@@ -343,7 +344,8 @@ class HerglotzPE(_PositionalEncoding):
             [_generate_herglotz_vector(self.input_dim, self.gen) for i in range(self.num_atoms)],
             dim=0
         )
-        self.register_buffer("A", A)
+        self.register_buffer("A_real", A.real)
+        self.register_buffer("A_imag", A.imag)
 
         self.w_R = nn.Parameter(torch.zeros(self.num_atoms))
 
@@ -369,19 +371,16 @@ class HerglotzPE(_PositionalEncoding):
 
         norm_const = 0. if not normalize else 1.0 / math.sqrt(2)
         self.register_buffer("norm_const_buf", torch.tensor(norm_const))
-        self.register_buffer("rref_buf", torch.tensor(rref))
+        self.register_buffer("rref_inv_buf", torch.tensor(1./rref))
          
     def forward(self, x: torch.Tensor) -> torch.Tensor:
 
-        x_c = x.to(self.A.dtype)
-        ax = torch.matmul(x_c, self.A.t())
-
-        ax_R = ax.real / self.rref_buf
-        ax_I = ax.imag / self.rref_buf
+        ax_R = F.linear(x, self.A_real) * self.rref_inv_buf
+        ax_I = F.linear(x, self.A_imag) * self.rref_inv_buf
 
         sin_term = torch.sin(self.w_R * ax_I  + self.b_I)
         exp_term = torch.exp(self.w_R * (ax_R - self.norm_const_buf) + self.b_R)
-    
+
         return sin_term * exp_term
 
 
@@ -432,10 +431,12 @@ class RegularHerglotzPE(_PositionalEncoding):
             If True, applies per-atom quaternion rotation. Default: True.
 
     Attributes:
-        A (Tensor, buffer):
-            Complex atoms of shape `(num_atoms, 3)`, dtype `torch.complex64`.
-        rref (Tensor, buffer):
-            Radial reference.
+        A_real (Tensor, buffer):
+            Real part of the complex atoms, shape `(num_atoms, 3)`.
+        A_imag (Tensor, buffer):
+            Imaginary part of the complex atoms, shape `(num_atoms, 3)`.
+        rref_buf (Tensor, buffer):
+            Radial reference scale.
         w_R (Parameter):
             Frequency weights for both sine and exponential terms.
         b_I (Parameter):
@@ -445,7 +446,7 @@ class RegularHerglotzPE(_PositionalEncoding):
         norm_const_buf (Tensor, buffer):
             Normalization constant (`0.0` or `1/√2`).
         quaternion_rotation (Module or callable):
-            Applies each atom’s quaternion in `forward()`.
+            Applies each atom’s quaternion rotation.
     """
 
 
@@ -483,8 +484,9 @@ class RegularHerglotzPE(_PositionalEncoding):
             [_generate_herglotz_vector(self.input_dim, self.gen) for i in range(self.num_atoms)],
             dim=0
         )
-        self.register_buffer("A", A)
-
+        self.register_buffer("A_real", A.real)
+        self.register_buffer("A_imag", A.imag)
+        
         self.w_R = nn.Parameter(torch.zeros(self.num_atoms))
         if init_exponents:
             L_upper = math.ceil(math.sqrt(self.num_atoms)) - 1
@@ -513,20 +515,17 @@ class RegularHerglotzPE(_PositionalEncoding):
         
         
     def _rotate_atoms(self) -> torch.Tensor:
-        A_rotated_real = self.quaternion_rotation(self.A.real)
-        A_rotated_imag = self.quaternion_rotation(self.A.imag)
+        A_rotated_real = self.quaternion_rotation(self.A_real)
+        A_rotated_imag = self.quaternion_rotation(self.A_imag)
 
-        return torch.complex(A_rotated_real, A_rotated_imag)
+        return A_rotated_real, A_rotated_imag
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
                 
-        A_rotated = self._rotate_atoms()
+        A_rotated_real, A_rotated_imag = self._rotate_atoms()
 
-        x_c = x.to(A_rotated.dtype)
-        ax = torch.matmul(x_c, A_rotated.t())
-
-        ax_R = ax.real / self.rref_buf
-        ax_I = ax.imag / self.rref_buf
+        ax_R = F.linear(x, A_rotated_real) / self.rref_buf
+        ax_I = F.linear(x, A_rotated_imag) / self.rref_buf
 
         sin_term = torch.sin(self.w_R * ax_I  + self.b_I)
         exp_term = torch.exp(self.w_R * (ax_R - self.norm_const_buf) + self.b_R)
@@ -583,20 +582,19 @@ class IrregularHerglotzPE(RegularHerglotzPE):
 
     def forward(self, x):
             
-        A_rotated = self._rotate_atoms()
-        
-        x_c = x.to(A_rotated.dtype)
-        r = x_c.norm(dim = -1, keepdim = True).clamp_min(1e-6)
-        ax = torch.matmul(x_c, A_rotated.t())
-    
-        ax_R = (ax.real / r) * (self.rref_buf/r)
-        ax_I = (ax.imag / r) * (self.rref_buf/r)
+        r = x.norm(dim = -1, keepdim = True).clamp_min(1e-6)
+        r_inv = r.reciprocal()
+        scale = self.rref_buf * r_inv * r_inv
+
+        A_rotated_real, A_rotated_imag = self._rotate_atoms()
+
+        ax_R = F.linear(x, A_rotated_real) * scale
+        ax_I = F.linear(x, A_rotated_imag) * scale
 
         sin_term = torch.sin(self.w_R * ax_I + self.b_I)
         exp_term = torch.exp(self.w_R * (ax_R - self.norm_const_buf) + self.b_R)
- 
-        return  (1/r) * sin_term * exp_term
-
+        
+        return  sin_term * exp_term * r_inv
 
 
 class FourierPE(_PositionalEncoding):
