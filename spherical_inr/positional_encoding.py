@@ -174,7 +174,7 @@ class RegularSolidHarmonicsPE(SphericalHarmonicsPE):
     r"""Regular Solid Harmonics Positional Encoding.
 
     Extends `SphericalHarmonicsPE` to encode a full 3-D point
-    :math:`(r,\theta,\phi)\in\R^3` into the regular solid harmonics basis
+    :math:`(r,\theta,\phi)\in\mathbb{R}^3` into the regular solid harmonics basis
     functions
 
     .. math::
@@ -262,7 +262,7 @@ class HerglotzPE(_PositionalEncoding):
     The forward mapping is given by
 
     .. math::
-        \psi(x) \;=\;\sin\bigl(w_{R}\,a_{\Im} + b_{I}\bigr)\;\exp\!\bigl(w_{R}\,(a_{\Im} - a_{norm}) + b_{R}\bigr)
+        \psi(x) \;=\;\sin\bigl(\frac{w_{R}}{\varpi_0}\,a_{\Im} + b_{I}\bigr)\;\exp\!\bigl(\frac{w_{R}}{\varpi_0}\,(a_{\Im} - a_{norm}) + b_{R}\bigr)
 
     where :
         - :math:`a_{\Re} = \frac{\Re \{x^\top A\}}{rref}`.
@@ -289,8 +289,8 @@ class HerglotzPE(_PositionalEncoding):
             If True, initialize `w_R` such that it activates the first L spherical harmonic orders (moments included). Recommended to use with `L` specified and `normalize` set to True.
         normalize (bool, keyword-only):
             If False, uses 1/√2 as the internal normalization constant; else 0. Bounding up the atoms by <= exp(b_R) if r <=rref. Default: True.
-        rotation (bool, keyword-only):
-            If True, applies per-atom quaternion rotation. Default: True.
+        varpi0 (float, keyword-only):
+            Inverse frequency scale. Default: 1.0.
 
     Attributes:
         A_real (Tensor, buffer):
@@ -307,6 +307,8 @@ class HerglotzPE(_PositionalEncoding):
             Bias for the exponential term.
         norm_const_buf (Tensor, buffer):
             Normalization constant (`0.0` or `1/√2`).
+        varpi0_inv_buf (Tensor, buffer):
+            `1./varpi0`.
     """
 
 
@@ -319,7 +321,8 @@ class HerglotzPE(_PositionalEncoding):
                  L: Optional[int] = None, 
                  seed: Optional[int] = None, 
                  rref : float = 1.0, 
-                 init_exponents: bool =  True, 
+                 init_exponents: bool =  True,
+                 varpi0 : float = 1.0, 
                  normalize : bool = True,) -> None:
         
         if num_atoms is not None and L is not None:
@@ -372,14 +375,16 @@ class HerglotzPE(_PositionalEncoding):
         norm_const = 0. if not normalize else 1.0 / math.sqrt(2)
         self.register_buffer("norm_const_buf", torch.tensor(norm_const))
         self.register_buffer("rref_inv_buf", torch.tensor(1./rref))
+        self.register_buffer("varpi0_inv_buf", torch.tensor(1./varpi0))
+        
          
     def forward(self, x: torch.Tensor) -> torch.Tensor:
 
         ax_R = F.linear(x, self.A_real) * self.rref_inv_buf
         ax_I = F.linear(x, self.A_imag) * self.rref_inv_buf
 
-        sin_term = torch.sin(self.w_R * ax_I  + self.b_I)
-        exp_term = torch.exp(self.w_R * (ax_R - self.norm_const_buf) + self.b_R)
+        sin_term = torch.sin(self.w_R * self.varpi0_inv_buf * ax_I  + self.b_I)
+        exp_term = torch.exp(self.w_R * self.varpi0_inv_buf * (ax_R - self.norm_const_buf) + self.b_R)
 
         return sin_term * exp_term
 
@@ -402,7 +407,7 @@ class RegularHerglotzPE(_PositionalEncoding):
     The forward mapping is given by
 
     .. math::
-        \psi(x) \;=\;\sin\bigl(w_{R}\,a_{\Im} + b_{I}\bigr)\;\exp\!\bigl(w_{R}\,(a_{\Im} - a_{norm}) + b_{R}\bigr)
+        \psi(x) \;=\;\sin\bigl(\frac{w_{R}}{\varpi_0}\,a_{\Im} + b_{I}\bigr)\;\exp\!\bigl(\frac{w_{R}}{\varpi_0}\,(a_{\Im} - a_{norm}) + b_{R}\bigr)
 
     where :
         - :math:`a_{\Re} = \frac{\Re \{x^\top A\}}{rref}`.
@@ -429,6 +434,8 @@ class RegularHerglotzPE(_PositionalEncoding):
             If False, uses 1/√2 as the internal normalization constant; else 0. Bounding up the atoms by <= exp(b_R) if r <=rref. Default: True.
         rotation (bool, keyword-only):
             If True, applies per-atom quaternion rotation. Default: True.
+        varpi0 (float, keyword-only):
+            Inverse frequency scale. Default: 1.0.
 
     Attributes:
         A_real (Tensor, buffer):
@@ -447,6 +454,9 @@ class RegularHerglotzPE(_PositionalEncoding):
             Normalization constant (`0.0` or `1/√2`).
         quaternion_rotation (Module or callable):
             Applies each atom’s quaternion rotation.
+        varpi0_inv_buf (Tensor, buffer):
+            `1./varpi0`.
+        
     """
 
 
@@ -459,6 +469,7 @@ class RegularHerglotzPE(_PositionalEncoding):
                  seed: Optional[int] = None, 
                  rref : float = 1.0, 
                  init_exponents: bool =  False, 
+                 varpi0 : float = 1.0,
                  normalize : bool = True,
                  rotation : bool = True,) -> None:
         
@@ -511,6 +522,7 @@ class RegularHerglotzPE(_PositionalEncoding):
         norm_const = 0. if normalize else 1.0 / math.sqrt(2)
         self.register_buffer("norm_const_buf", torch.tensor(norm_const))
         self.register_buffer("rref_buf", torch.tensor(rref))
+        self.register_buffer("varpi0_inv_buf", torch.tensor(1./varpi0))
         self.quaternion_rotation = QuaternionRotation(self.num_atoms, self.gen) if rotation else lambda x : x
         
         
@@ -527,8 +539,8 @@ class RegularHerglotzPE(_PositionalEncoding):
         ax_R = F.linear(x, A_rotated_real) / self.rref_buf
         ax_I = F.linear(x, A_rotated_imag) / self.rref_buf
 
-        sin_term = torch.sin(self.w_R * ax_I  + self.b_I)
-        exp_term = torch.exp(self.w_R * (ax_R - self.norm_const_buf) + self.b_R)
+        sin_term = torch.sin((self.w_R * self.varpi0_inv_buf) * ax_I  + self.b_I)
+        exp_term = torch.exp((self.w_R * self.varpi0_inv_buf) * (ax_R - self.norm_const_buf) + self.b_R)
     
         return sin_term * exp_term
 
@@ -544,7 +556,7 @@ class IrregularHerglotzPE(RegularHerglotzPE):
     After (optional) quaternion rotation, we compute
 
     .. math::
-        \psi(x) \;=\; \frac{1}{r}\,\sin\bigl(w_{R}\,a_{\Im} + b_{I}\bigr)\;\exp\!\bigl(w_{R}\,(a_{\Re} - a_{norm}) + b_{R}\bigr)
+        \psi(x) \;=\; \frac{1}{r}\,\sin\bigl(\frac{w_{R}}{\varpi_0}\,a_{\Im} + b_{I}\bigr)\;\exp\!\bigl(\frac{w_{R}}{\varpi_0}\,(a_{\Re} - a_{norm}) + b_{R}\bigr)
 
     where :
         - :math:`a_{\Re} = \frac{\Re \{x^\top A\}}{r} \frac{r_{ref}}{r}`. 
@@ -575,6 +587,8 @@ class IrregularHerglotzPE(RegularHerglotzPE):
             Bounds the atom responses by ≤ exp(b_R) when r ≥ rref. Default: True.
         rotation (bool, keyword-only):
             If True, applies per-atom quaternion rotation. Default: True.
+        varpi0 (float, keyword-only):
+            Inverse frequency scale. Default: 1.0.
 
     Attributes:
         (inherited from `RegularHerglotzPE`)
@@ -584,15 +598,15 @@ class IrregularHerglotzPE(RegularHerglotzPE):
             
         r = x.norm(dim = -1, keepdim = True).clamp_min(1e-6)
         r_inv = r.reciprocal()
-        scale = self.rref_buf * r_inv * r_inv
+        scale = self.rref_buf * r_inv * r_inv 
 
         A_rotated_real, A_rotated_imag = self._rotate_atoms()
 
         ax_R = F.linear(x, A_rotated_real) * scale
         ax_I = F.linear(x, A_rotated_imag) * scale
 
-        sin_term = torch.sin(self.w_R * ax_I + self.b_I)
-        exp_term = torch.exp(self.w_R * (ax_R - self.norm_const_buf) + self.b_R)
+        sin_term = torch.sin((self.w_R * self.varpi0_inv_buf)* ax_I + self.b_I)
+        exp_term = torch.exp((self.w_R * self.varpi0_inv_buf)* (ax_R - self.norm_const_buf) + self.b_R)
         
         return  sin_term * exp_term * r_inv
 
