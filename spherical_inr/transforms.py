@@ -17,7 +17,7 @@ def rtp_to_r3(rtp_coords: torch.Tensor) -> torch.Tensor:
     """
     if rtp_coords.shape[-1] != 3:
         raise ValueError("The last dimension of rtp_coords must be 3.")
-    
+
     r, theta, phi = rtp_coords.unbind(dim=-1)
     sin_theta = torch.sin(theta)
     x = r * sin_theta * torch.cos(phi)
@@ -41,7 +41,7 @@ def tp_to_r3(tp_coords: torch.Tensor) -> torch.Tensor:
     """
     if tp_coords.shape[-1] != 2:
         raise ValueError("The last dimension of tp_coords must be 2.")
-    
+
     theta, phi = tp_coords.unbind(dim=-1)
     sin_theta = torch.sin(theta)
     x = sin_theta * torch.cos(phi)
@@ -66,7 +66,7 @@ def r3_to_rtp(r3_coords: torch.Tensor) -> torch.Tensor:
     """
     if r3_coords.shape[-1] != 3:
         raise ValueError("The last dimension of r3_coords must be 3.")
-    
+
     x, y, z = r3_coords.unbind(dim=-1)
     r = torch.sqrt(x**2 + y**2 + z**2)
     theta = torch.acos(torch.clamp(z / (r + 1e-8), -1.0, 1.0))
@@ -90,7 +90,7 @@ def r3_to_tp(r3_coords: torch.Tensor) -> torch.Tensor:
     """
     if r3_coords.shape[-1] != 3:
         raise ValueError("The last dimension of r3_coords must be 3.")
-    
+
     norm = torch.norm(r3_coords, dim=-1, keepdim=True)
     unit_coords = r3_coords / (norm + 1e-8)
     x, y, z = unit_coords.unbind(dim=-1)
@@ -100,6 +100,7 @@ def r3_to_tp(r3_coords: torch.Tensor) -> torch.Tensor:
 
 
 # === 2D Conversion Functions ===
+
 
 def rt_to_r2(rt_coords: torch.Tensor) -> torch.Tensor:
     """
@@ -116,7 +117,7 @@ def rt_to_r2(rt_coords: torch.Tensor) -> torch.Tensor:
     """
     if rt_coords.shape[-1] != 2:
         raise ValueError("The last dimension of rt_coords must be 2.")
-    
+
     r, theta = rt_coords.unbind(dim=-1)
     x = r * torch.cos(theta)
     y = r * torch.sin(theta)
@@ -138,7 +139,7 @@ def t_to_r2(t_coords: torch.Tensor) -> torch.Tensor:
     """
     if t_coords.shape[-1] != 1:
         raise ValueError("The last dimension of t_coords must be 1.")
-    
+
     theta = t_coords.squeeze(dim=-1)
     x = torch.cos(theta)
     y = torch.sin(theta)
@@ -160,7 +161,7 @@ def r2_to_rt(r2_coords: torch.Tensor) -> torch.Tensor:
     """
     if r2_coords.shape[-1] != 2:
         raise ValueError("The last dimension of r2_coords must be 2.")
-    
+
     x, y = r2_coords.unbind(dim=-1)
     r = torch.sqrt(x**2 + y**2)
     theta = torch.atan2(y, x)
@@ -183,7 +184,7 @@ def r2_to_t(r2_coords: torch.Tensor) -> torch.Tensor:
     """
     if r2_coords.shape[-1] != 2:
         raise ValueError("The last dimension of r2_coords must be 2.")
-    
+
     norm = torch.norm(r2_coords, dim=-1, keepdim=True)
     unit_coords = r2_coords / (norm + 1e-8)
     x, y = unit_coords.unbind(dim=-1)
