@@ -91,25 +91,31 @@ class SirenNet(nn.Module):
 
 class HerglotzNet(nn.Module):
     r"""
-    Herglotz-based SIREN on the 2-sphere.
+    Herglotz-Net on the 2-sphere.
 
-    This network represents functions defined on the sphere by combining
-    a Cartesian Herglotz positional encoding with a sine-activated MLP.
-    Inputs are provided in spherical coordinates and internally converted
-    to Cartesian coordinates on the unit sphere.
+    This network represents functions defined on the unit sphere by combining
+    a Herglotz positional encoding with a sine-activated multilayer
+    perceptron.
 
-    The mapping is
+    Inputs are provided in spherical coordinates
+    :math:`(\theta,\phi)` and internally converted to Cartesian coordinates
+    on the unit sphere,
+
+    .. math::
+        x(\theta,\phi)
+        = (\sin\theta\cos\phi,\; \sin\theta\sin\phi,\; \cos\theta).
+
+    The overall mapping implemented by the network is
 
     .. math::
         f(\theta,\phi)
         = \mathrm{MLP}_{\sin}
         \Bigl(
-            \psi_{\mathrm{H}}
-            \bigl(x(\theta,\phi)\bigr)
+            \psi_{\mathrm{H}}\bigl(x(\theta,\phi)\bigr)
         \Bigr),
 
-    where :math:`\psi_{\mathrm{H}}` is the Herglotz positional encoding defined
-    on :math:`\mathbb{R}^3`.
+    where :math:`\psi_{\mathrm{H}}` is the Cartesian Herglotz positional encoding
+    defined in :class:`HerglotzPE`.
 
     Parameters
     ----------
@@ -122,11 +128,14 @@ class HerglotzNet(nn.Module):
     bias:
         Whether to include bias terms in the MLP.
     L_init:
-        Upper bound used to initialize the Herglotz parameters
-        :math:`\sigma_k \sim \mathcal{U}(0, L_{\mathrm{init}})`.
+        Upper bound used to initialize the Herglotz magnitude parameters
+        :math:`\rho_k`.
     omega0_mlp:
-        Frequency factor :math:`\omega_0^{\mathrm{MLP}}` used in the sine activations
-        of the MLP.
+        Frequency factor :math:`\omega_0^{\mathrm{MLP}}` used in the sine
+        activations of the MLP.
+    rot:
+        If ``True``, enables a learnable quaternion rotation in the
+        Herglotz positional encoding.
 
     Input
     -----
@@ -138,10 +147,6 @@ class HerglotzNet(nn.Module):
     ------
     Tensor of shape ``(..., output_dim)``.
 
-    Notes
-    -----
-    This class is a *wrapper* around a Cartesian Herglotz encoding.
-    The conversion from spherical to Cartesian coordinates is handled internally.
     """
 
     def __init__(
@@ -153,10 +158,11 @@ class HerglotzNet(nn.Module):
         bias: bool = True,
         L_init: int = 15,
         omega0_mlp: float = 1.0,
+        rot: bool = False,
     ):
 
         super().__init__()
-        self.pe = HerglotzPE(num_atoms, L_init)
+        self.pe = HerglotzPE(num_atoms=num_atoms, L_init=L_init, rot=rot)
         self.mlp = SineMLP(
             input_features=num_atoms,
             output_features=output_dim,
@@ -176,7 +182,7 @@ class HerglotzNet(nn.Module):
 
 class SphericalSirenNet(nn.Module):
     r"""
-    SIREN on the 2-sphere using real spherical harmonics.
+    Spherical-SIREN on the 2-sphere using real spherical harmonics.
 
     This network represents functions defined on the sphere by first encoding
     angular coordinates :math:`(\theta,\phi)` using real spherical harmonics,

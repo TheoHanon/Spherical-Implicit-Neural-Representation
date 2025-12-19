@@ -95,58 +95,64 @@ class SphericalHarmonicsPE(nn.Module):
 
 class HerglotzPE(nn.Module):
     r"""
-    Herglotz positional encoding on Cartesian coordinates.
+    Herglotz positional encoding with learnable phase and magnitude.
 
-    This module implements a Cartesian Herglotz-type feature map.
-    It expects inputs
+    This module implements a real-valued Herglotz-type feature map defined on
+    Cartesian coordinates :math:`x \in \mathbb{R}^3`.
 
-    .. math::
-        x \in \mathbb{R}^3
+    Each atom :math:`k` is defined by two orthonormal vectors
+    :math:`a_k^{\mathrm{R}}, a_k^{\mathrm{I}} \in \mathbb{R}^3`, forming an
+    implicit complex direction
+    :math:`a_k = a_k^{\mathrm{R}} + i\,a_k^{\mathrm{I}}`.
 
-    and produces ``num_atoms`` real-valued features.
-
-    Each atom :math:`k` is defined by a complex vector
-
-    .. math::
-        a_k = a_k^{\mathrm{R}} + i\,a_k^{\mathrm{I}} \in \mathbb{C}^3,
-
-    where the real and imaginary parts are orthonormal vectors in
-    :math:`\mathbb{R}^3`.
-    For an input point :math:`x`, we form the complex projection
+    For an input point :math:`x`, we compute the projections
 
     .. math::
-        z_k(x)
-        = \langle x, a_k^{\mathrm{R}} \rangle
-        + i\,\langle x, a_k^{\mathrm{I}} \rangle.
+        u_k = \langle x, a_k^{\mathrm{R}} \rangle, \qquad
+        v_k = \langle x, a_k^{\mathrm{I}} \rangle.
 
-    The complex Herglotz feature is then defined as
+    Each atom is parameterized by two learnable scalars:
+    a magnitude :math:`\rho_k > 0` and a phase :math:`\theta_k \in [0, 2\pi)`,
+
+    .. math::
+        \rho_k = \mathrm{softplus}(\sigma_k^{\mathrm{mod}}), \qquad
+        \theta_k = \sigma_k^{\mathrm{arg}}.
+
+    A rotated projection is then formed as
+
+    .. math::
+        r_k = u_k \cos\theta_k - v_k \sin\theta_k, \qquad
+        s_k = u_k \sin\theta_k + v_k \cos\theta_k.
+
+    The Herglotz feature associated with atom :math:`k` is defined in closed form as
 
     .. math::
         h_k(x)
-        = C \,\bigl(1 + 2\,\sigma_k\,z_k(x)\bigr)
-          \exp\bigl(\sigma_k (z_k(x) - 1)\bigr),
+        = C \, e^{\rho_k (r_k - 1)}
+        \Bigl[
+            (1 + 2\rho_k r_k)\cos(\rho_k s_k)
+            - (2\rho_k s_k)\sin(\rho_k s_k)
+        \Bigr],
 
-    where:
-    - :math:`\sigma_k > 0` is a learnable scalar parameter,
-    - :math:`C = \frac{1}{1 + 2L_{\text{init}}}` is a fixed normalization constant.
-
-    The final real-valued encoding is obtained by mixing the real and
-    imaginary parts with learnable weights
+    where
 
     .. math::
-        \psi_k(x)
-        = w_k^{\mathrm{R}}\,\Re(h_k(x))
-        + w_k^{\mathrm{I}}\,\Im(h_k(x)),
+        C = \frac{1}{1 + 2L_{\mathrm{init}}}
 
-    where :math:`w_k \in \mathbb{R}^2` is a learned mixing vector.
+    is a fixed normalization constant.
+
+    Optionally, a learnable quaternion rotation may be applied to all atoms
+    before evaluation, allowing the encoding to learn a global orientation.
 
     Parameters
     ----------
     num_atoms:
         Number of Herglotz atoms (output features).
     L_init:
-        Upper bound used to initialize
-        :math:`\sigma_k \sim \mathcal{U}(0, L_{\text{init}})`.
+        Upper bound used to initialize the magnitude parameters
+        :math:`\sigma_k^{\mathrm{mod}} \sim \mathcal{U}(0, L_{\mathrm{init}})`.
+    rot:
+        If ``True``, applies a learnable quaternion rotation to all atoms.
 
     Input
     -----
@@ -159,22 +165,28 @@ class HerglotzPE(nn.Module):
 
     Notes
     -----
-    This module is **Cartesian-only**. If your data is given as spherical
-    angles :math:`(\theta,\phi)`, convert it to Cartesian coordinates using
-    a separate wrapper before calling this module.
+    This module is **Cartesian-only**.
+    If your data is given in spherical coordinates :math:`(\theta,\phi)`,
+    use a wrapper to convert inputs to Cartesian coordinates before applying this encoding.
     """
 
-    def __init__(self, num_atoms: int, L_init: int) -> None:
+    def __init__(self, num_atoms: int, L_init: int, rot: bool = False) -> None:
 
         super().__init__()
         self.num_atoms = num_atoms
         self.L_init = L_init
+        self.rot = rot
 
         self.sigmas_mod = nn.Parameter(torch.empty(self.num_atoms))
         self.sigmas_arg = nn.Parameter(torch.empty(self.num_atoms))
 
-        self.register_buffer("A_real", torch.empty(self.num_atoms, 3))
-        self.register_buffer("A_imag", torch.empty(self.num_atoms, 3))
+        self.register_buffer("A_real0", torch.empty(self.num_atoms, 3))
+        self.register_buffer("A_imag0", torch.empty(self.num_atoms, 3))
+
+        if rot:
+            self.qrot = nn.Parameter(torch.empty(num_atoms, 4))
+        else:
+            self.register_parameter("qrot", None)
 
         inv_const = 1.0 / (1.0 + 2 * self.L_init)
         self.register_buffer(
@@ -189,26 +201,30 @@ class HerglotzPE(nn.Module):
     ) -> None:
         with torch.no_grad():
             aR, aI = self._generate_atoms(
-                self.num_atoms, device=self.A_real.device, dtype=self.A_real.dtype
+                self.num_atoms, device=self.A_real0.device, dtype=self.A_real0.dtype
             )
-            self.A_real.copy_(aR)
-            self.A_imag.copy_(aI)
+            self.A_real0.copy_(aR)
+            self.A_imag0.copy_(aI)
             nn.init.uniform_(self.sigmas_mod, 0, self.L_init)
             nn.init.uniform_(self.sigmas_arg, 0, 2 * math.pi)
+
+            if self.qrot is not None:
+                self.qrot.zero_()
+                self.qrot[:, 0] = 1.0
 
     @staticmethod
     def _generate_atoms(
         num_atoms: int, device=None, dtype=None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
 
-        a_I = torch.randn(num_atoms, 3, device=device, dtype=dtype)
-        a_R = torch.randn(num_atoms, 3, device=device, dtype=dtype)
+        aI = torch.randn(num_atoms, 3, device=device, dtype=dtype)
+        aR = torch.randn(num_atoms, 3, device=device, dtype=dtype)
 
-        a_R /= torch.norm(a_R, dim=1, keepdim=True).clamp(1e-12)
-        a_I -= torch.sum(a_I * a_R, dim=1, keepdim=True) * a_R
-        a_I /= torch.norm(a_I, dim=1, keepdim=True).clamp(1e-12)
+        aR /= torch.norm(aR, dim=1, keepdim=True).clamp(1e-12)
+        aI -= torch.sum(aI * aR, dim=1, keepdim=True) * aR
+        aI /= torch.norm(aI, dim=1, keepdim=True).clamp(1e-12)
 
-        return a_R, a_I
+        return aR, aI
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
 
@@ -218,11 +234,12 @@ class HerglotzPE(nn.Module):
             )
         return PE.herglotz(
             x,
-            self.A_real,
-            self.A_imag,
+            self.A_real0,
+            self.A_imag0,
             self.sigmas_mod,
             self.sigmas_arg,
             self.inv_const,
+            self.qrot,
         )
 
 

@@ -38,6 +38,17 @@ def sph_harm(x: torch.Tensor, l_list: torch.Tensor, m_list: torch.Tensor):
     return outs
 
 
+def _quat_normalize(q, eps=1e-8):
+    return q / q.norm(dim=-1, keepdim=True).clamp_min(eps)
+
+
+def _quat_rotate(q, v):
+    w = q[..., :1]
+    qvec = q[..., 1:]
+    t = 2.0 * torch.cross(qvec, v, dim=-1)
+    return v + w * t + torch.cross(qvec, t, dim=-1)
+
+
 def herglotz(
     x: torch.Tensor,
     A_real: torch.Tensor,
@@ -45,12 +56,18 @@ def herglotz(
     sigma_mod: torch.Tensor,
     sigma_arg: torch.Tensor,
     inv_const: torch.Tensor,
+    qrot: Optional[torch.Tensor] = None,
 ):
+
+    if qrot is not None:
+        q = _quat_normalize(qrot)
+        A_real = _quat_rotate(q, A_real)
+        A_imag = _quat_rotate(q, A_imag)
 
     ax_R = F.linear(x, A_real)  # (..., num_atoms)
     ax_I = F.linear(x, A_imag)
 
-    rho = sigma_mod
+    rho = F.softplus(sigma_mod)
     th = sigma_arg
 
     c = torch.cos(th)
