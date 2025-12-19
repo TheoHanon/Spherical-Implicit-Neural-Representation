@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from . import transforms as T
+from . import _coords as T
 
 from .positional_encoding import (
     HerglotzPE,
@@ -13,7 +13,38 @@ from .mlp import (
     SineMLP,
 )
 
+from ._interfaces import PositionalEncoding, MLP
+
 from typing import List
+
+
+__all__ = ["INR", "SirenNet", "HerglotzNet", "SphericalSirenNet"]
+
+
+class INR(nn.Module):
+
+    def __init__(self, positional_encoding: PositionalEncoding, mlp: MLP):
+        super().__init__()
+
+        if not isinstance(positional_encoding, PositionalEncoding):
+            raise TypeError(
+                "`pe` must implement the PositionalEncoding interface: `.out_dim` and `forward/__call__`."
+            )
+        if not isinstance(mlp, MLP):
+            raise TypeError(
+                "`mlp` must implement the BackboneMLP interface: `.in_dim`, `.out_dim`, and `forward/__call__`."
+            )
+
+        if int(mlp.in_dim) != int(positional_encoding.out_dim):
+            raise ValueError(
+                f"Incompatible PE/MLP: mlp.in_dim={mlp.in_dim} must equal pe.out_dim={positional_encoding.out_dim}."
+            )
+
+        self.pe = positional_encoding
+        self.mlp = mlp
+
+    def forward(self, x: torch.Tensor):
+        return self.mlp(self.pe(x))
 
 
 class SirenNet(nn.Module):

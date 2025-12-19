@@ -5,6 +5,64 @@ import torch.nn.functional as F
 import math
 from typing import List
 
+__all__ = ["ReLUMLP", "SineMLP"]
+
+
+class ReLUMLP(nn.Module):
+    r"""
+    ReLU-activated multi-layer perceptron.
+
+    Hidden layers apply:
+
+    .. math::
+        h_k = \mathrm{ReLU}(W_k h_{k-1} + b_k), \quad k=1,\dots,L-1,
+
+    and the output layer is linear:
+
+    .. math::
+        f_\theta(x) = W_L h_{L-1} + b_L.
+
+    Parameters
+    ----------
+    input_features:
+        Input dimension.
+    output_features:
+        Output dimension.
+    hidden_sizes:
+        List of hidden layer widths.
+    bias:
+        Whether to include biases in each linear layer.
+    """
+
+    def __init__(
+        self,
+        input_features: int,
+        output_features: int,
+        hidden_sizes: List[int],
+        bias: bool = True,
+    ):
+        super().__init__()
+        self.input_features = int(input_features)
+        self.output_features = int(output_features)
+
+        sizes = [self.input_features] + list(hidden_sizes) + [self.output_features]
+        self.layers = nn.ModuleList(
+            nn.Linear(sizes[i], sizes[i + 1], bias=bias) for i in range(len(sizes) - 1)
+        )
+
+    @property
+    def in_dim(self) -> int:
+        return self.input_features
+
+    @property
+    def out_dim(self) -> int:
+        return self.output_features
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for layer in self.layers[:-1]:
+            x = F.relu(layer(x))
+        return self.layers[-1](x)
+
 
 class SineMLP(nn.Module):
     r"""
@@ -68,6 +126,14 @@ class SineMLP(nn.Module):
         )
         self.omega0 = omega0
         self.reset_parameters()
+
+    @property
+    def in_dim(self) -> int:
+        return self.input_features
+
+    @property
+    def out_dim(self) -> int:
+        return self.output_features
 
     def reset_parameters(
         self,

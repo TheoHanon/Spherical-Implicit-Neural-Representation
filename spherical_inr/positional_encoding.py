@@ -4,18 +4,44 @@ import torch
 import torch.nn as nn
 import math
 
-from . import functional as PE
+from . import _kernels as PE
 from .third_party.locationencoder.sh import SH
 
 from typing import Tuple
-from enum import Enum
 
 
 __all__ = [
+    "IdentityPE",
     "HerglotzPE",
     "FourierPE",
     "SphericalHarmonicsPE",
 ]
+
+
+class IdentityPE(nn.Module):
+    r"""
+    Identity positional encoding.
+
+    .. math::
+        \psi(x) = x.
+
+    Input: ``(..., input_dim)`` → Output: ``(..., input_dim)``.
+    """
+
+    def __init__(self, input_dim: int):
+        super().__init__()
+        self.input_dim = int(input_dim)
+
+    @property
+    def out_dim(self) -> int:
+        return self.input_dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.shape[-1] != self.input_dim:
+            raise ValueError(
+                f"IdentityPE expects x[...,{self.input_dim}], got {x.shape}"
+            )
+        return x
 
 
 class SphericalHarmonicsPE(nn.Module):
@@ -87,6 +113,10 @@ class SphericalHarmonicsPE(nn.Module):
         self.register_buffer(
             "m_list", torch.tensor(ms, dtype=torch.int64), persistent=False
         )
+
+    @property
+    def out_dim(self) -> int:
+        return self.num_atoms
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         assert x.size(-1) == 2, "Input dim must be (theta, phi)"
@@ -226,6 +256,10 @@ class HerglotzPE(nn.Module):
 
         return aR, aI
 
+    @property
+    def out_dim(self) -> int:
+        return self.num_atoms
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
 
         if x.shape[-1] != 3:
@@ -308,6 +342,10 @@ class FourierPE(nn.Module):
             if self.bias is not None:
                 bound = 1 / math.sqrt(self.input_dim)
                 nn.init.uniform_(self.bias, -bound, bound)
+
+    @property
+    def out_dim(self) -> int:
+        return self.num_atoms
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return PE.fourier(x, self.Omega, self.omega0, self.bias)

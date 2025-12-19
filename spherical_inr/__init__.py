@@ -17,6 +17,5 @@ __version__ = "0.4.3"
 
 from .inr import *
 from .positional_encoding import *
-from .transforms import *
 from .mlp import *
-from .differentiation import *
+from .diffops import *
