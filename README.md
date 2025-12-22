@@ -13,11 +13,8 @@
 
 > **Coordinate conventions**:
 >
-> - **Angles**: θ∈[0,π], φ∈[0,2π) in radians.
-> - **Full spherical**: (r≥0, θ, φ).
-> - **2D polar**: (r,θ) or angle-only (θ).
-
-
+> - **Angles**: $\theta \in [0,\pi], \varphi ∈[0,2\pi)$ in radians.
+> - **Full spherical**: $(r, \theta, \varphi)$.
 
 ## 📦 Installation
 
