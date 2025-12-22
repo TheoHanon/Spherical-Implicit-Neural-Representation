@@ -13,8 +13,6 @@ from .mlp import (
     SineMLP,
 )
 
-from ._interfaces import PositionalEncoding, MLP
-
 from typing import List
 
 
@@ -43,23 +41,8 @@ class INR(nn.Module):
         Must expose ``in_dim`` and ``out_dim`` attributes and be callable.
     """
 
-    def __init__(self, positional_encoding: PositionalEncoding, mlp: MLP):
+    def __init__(self, positional_encoding: nn.Module, mlp: nn.Module):
         super().__init__()
-
-        if not isinstance(positional_encoding, PositionalEncoding):
-            raise TypeError(
-                "`pe` must implement the PositionalEncoding interface: `.out_dim` and `forward/__call__`."
-            )
-        if not isinstance(mlp, MLP):
-            raise TypeError(
-                "`mlp` must implement the BackboneMLP interface: `.in_dim`, `.out_dim`, and `forward/__call__`."
-            )
-
-        if int(mlp.in_dim) != int(positional_encoding.out_dim):
-            raise ValueError(
-                f"Incompatible PE/MLP: mlp.in_dim={mlp.in_dim} must equal pe.out_dim={positional_encoding.out_dim}."
-            )
-
         self.pe = positional_encoding
         self.mlp = mlp
 
@@ -80,6 +63,10 @@ class INR(nn.Module):
         torch.Tensor
             Output of the MLP applied to the encoded input.
             Shape ``(..., mlp.out_dim)``.
+
+        Notes
+        -----
+        The method doesn't check whether the dimensions between the backbone and the positional encodings are consistent.
         """
 
         return self.mlp(self.pe(x))
@@ -94,13 +81,10 @@ class SirenNet(nn.Module):
     to the angles, followed by a sine-activated multilayer perceptron:
 
     .. math::
-        f(\theta,\phi) = \operatorname{SineMLP}\bigl(\psi_{\mathrm{Fourier}}(\theta,\phi)\bigr),
+        f(\theta,\phi) = \operatorname{SineMLP}\bigl(\psi^{\mathrm{F}}(\theta,\phi)\bigr),
 
-    with
-
-    .. math::
-        \psi_{\operatorname{Fourier}}(\theta,\phi)
-        = \sin\!\Bigl(\omega_0^{\mathrm{PE}}([\theta,\phi] W^\top + b)\Bigr).
+    where :math:`\psi^{\mathrm{F}}` is the Fourier positional encoding
+    defined in :class:`FourierPE`.
 
     No coordinate transformation is applied: the angles are treated as inputs
     in :math:`\mathbb{R}^2`.
@@ -192,10 +176,10 @@ class HerglotzNet(nn.Module):
         f(\theta,\phi)
         = \operatorname{SineMLP}
         \Bigl(
-            \psi_{\mathrm{H}}\bigl(x(\theta,\phi)\bigr)
+            \psi^{H}\bigl(x(\theta,\phi)\bigr)
         \Bigr),
 
-    where :math:`\psi_{\mathrm{H}}` is the Cartesian Herglotz positional encoding
+    where :math:`\psi^{\mathrm{H}}` is the Cartesian Herglotz positional encoding
     defined in :class:`HerglotzPE`.
 
     Parameters
@@ -293,7 +277,7 @@ class SphericalSirenNet(nn.Module):
         f(\theta,\phi)
         = \operatorname{SineMLP}\bigl(\psi_{\mathrm{SH}}(\theta,\phi)\bigr),
 
-    where :math:`\psi_{\mathrm{SH}}` denotes the real spherical harmonics
+    where :math:`\psi^{\mathrm{SH}}` denotes the real spherical harmonics
     positional encoding.
 
     Parameters

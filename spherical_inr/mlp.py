@@ -50,15 +50,23 @@ class ReLUMLP(nn.Module):
             nn.Linear(sizes[i], sizes[i + 1], bias=bias) for i in range(len(sizes) - 1)
         )
 
-    @property
-    def in_dim(self) -> int:
-        return self.input_features
-
-    @property
-    def out_dim(self) -> int:
-        return self.output_features
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass of the ReLU-activated MLP.
+
+        Applies a sequence of linear layers with ReLU activation on all hidden
+        layers, followed by a final linear output layer without activation.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape ``(..., input_features)``.
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor of shape ``(..., output_features)``.
+        """
         for layer in self.layers[:-1]:
             x = F.relu(layer(x))
         return self.layers[-1](x)
@@ -127,14 +135,6 @@ class SineMLP(nn.Module):
         self.omega0 = omega0
         self.reset_parameters()
 
-    @property
-    def in_dim(self) -> int:
-        return self.input_features
-
-    @property
-    def out_dim(self) -> int:
-        return self.output_features
-
     def reset_parameters(
         self,
     ) -> None:
@@ -149,6 +149,23 @@ class SineMLP(nn.Module):
                     nn.init.constant_(layer.bias, 0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass of the sine-activated MLP.
+
+        Applies sine nonlinearities with frequency scaling ``omega0`` after each
+        hidden linear layer, followed by a final linear output layer.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape ``(..., input_features)``.
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor of shape ``(..., output_features)``.
+        """
+
         for layer in self.hidden_layers[:-1]:
             x = torch.sin(self.omega0 * layer(x))
         return self.hidden_layers[-1](x)

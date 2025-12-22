@@ -5,43 +5,15 @@ import torch.nn as nn
 import math
 
 from . import _kernels as PE
-from .third_party.locationencoder.sh import SH
 
 from typing import Tuple
 
 
 __all__ = [
-    "IdentityPE",
     "HerglotzPE",
     "FourierPE",
     "SphericalHarmonicsPE",
 ]
-
-
-class IdentityPE(nn.Module):
-    r"""
-    Identity positional encoding.
-
-    .. math::
-        \psi(x) = x.
-
-    Input: ``(..., input_dim)`` → Output: ``(..., input_dim)``.
-    """
-
-    def __init__(self, input_dim: int):
-        super().__init__()
-        self.input_dim = int(input_dim)
-
-    @property
-    def out_dim(self) -> int:
-        return self.input_dim
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if x.shape[-1] != self.input_dim:
-            raise ValueError(
-                f"IdentityPE expects x[...,{self.input_dim}], got {x.shape}"
-            )
-        return x
 
 
 class SphericalHarmonicsPE(nn.Module):
@@ -53,7 +25,7 @@ class SphericalHarmonicsPE(nn.Module):
     to a vector of real spherical harmonics
 
     .. math::
-        \psi(x) =
+        \psi^{\mathrm{SH}}(x) =
         \bigl(
             Y_{\ell_1}^{m_1}(\theta,\phi), \dots,
             Y_{\ell_N}^{m_N}(\theta,\phi)
@@ -106,11 +78,31 @@ class SphericalHarmonicsPE(nn.Module):
             "m_list", torch.tensor(ms, dtype=torch.int64), persistent=False
         )
 
-    @property
-    def out_dim(self) -> int:
-        return self.num_atoms
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass of the spherical harmonics encoding.
+
+        This method evaluates the preselected real spherical harmonic basis
+        functions at the input angular coordinates and returns the first
+        ``num_atoms`` coefficients in standard ordering.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Tensor of shape ``(..., 2)`` containing spherical angles
+            ``(theta, phi)`` in radians.
+
+        Returns
+        -------
+        torch.Tensor
+            Real spherical harmonics evaluated at the input angles,
+            with shape ``(..., num_atoms)``.
+
+        Raises
+        ------
+        ValueError
+            If ``x.shape[-1] != 2``.
+        """
         assert x.size(-1) == 2, "Input dim must be (theta, phi)"
         return PE.sph_harm(x, self.l_list, self.m_list)
 
@@ -123,45 +115,27 @@ class HerglotzPE(nn.Module):
     Cartesian coordinates :math:`x \in \mathbb{R}^3`.
 
     Each atom :math:`k` is defined by two orthonormal vectors
-    :math:`a_k^{\mathrm{R}}, a_k^{\mathrm{I}} \in \mathbb{R}^3`, forming an
+    :math:`a_{k, \Re}, a_{k, \Im} \in \mathbb{R}^3`, forming an
     implicit complex direction
-    :math:`a_k = a_k^{\mathrm{R}} + i\,a_k^{\mathrm{I}}`.
+    :math:`a_k = a_{k, \Re} + i\,a_{k, \Im}`.
 
     For an input point :math:`x`, we compute the projections
 
     .. math::
-        u_k = \langle x, a_k^{\mathrm{R}} \rangle, \qquad
-        v_k = \langle x, a_k^{\mathrm{I}} \rangle.
+        u_k = \langle x, a_{k, \Re} \rangle, \qquad
+        v_k = \langle x, a_{k, \Im} \rangle.
 
-    Each atom is parameterized by two learnable scalars:
-    a magnitude :math:`\rho_k > 0` and a phase :math:`\theta_k \in [0, 2\pi)`,
-
-    .. math::
-        \rho_k = \mathrm{softplus}(\sigma_k^{\mathrm{mod}}), \qquad
-        \theta_k = \sigma_k^{\mathrm{arg}}.
-
-    A rotated projection is then formed as
-
-    .. math::
-        r_k = u_k \cos\theta_k - v_k \sin\theta_k, \qquad
-        s_k = u_k \sin\theta_k + v_k \cos\theta_k.
+    Each atom is parameterized by learnable parameter :math:`\sigma_k` with :math:`\sigma_k \sim \mathcal{U}(0, L_{\text{init}})`.
 
     The Herglotz feature associated with atom :math:`k` is defined in closed form as
 
     .. math::
-        h_k(x)
-        = C \, e^{\rho_k (r_k - 1)}
+        \psi^{\mathrm{H}}_k(x)
+        = \frac{1}{1 + 2L_{\text{init}}} e^{\rho_k (u_k - 1)}
         \Bigl[
-            (1 + 2\rho_k r_k)\cos(\rho_k s_k)
-            - (2\rho_k s_k)\sin(\rho_k s_k)
-        \Bigr],
-
-    where
-
-    .. math::
-        C = \frac{1}{1 + 2L_{\mathrm{init}}}
-
-    is a fixed normalization constant.
+            (1 + 2\rho_k u_k)\cos(\rho_k v_k)
+            - (2\rho_k v_k)\sin(\rho_k v_k)
+        \Bigr].
 
     Optionally, a learnable quaternion rotation may be applied to all atoms
     before evaluation, allowing the encoding to learn a global orientation.
@@ -172,7 +146,7 @@ class HerglotzPE(nn.Module):
         Number of Herglotz atoms (output features).
     L_init: int
         Upper bound used to initialize the magnitude parameters
-        :math:`\sigma_k^{\mathrm{mod}} \sim \mathcal{U}(0, L_{\mathrm{init}})`.
+        :math:`\sigma_k \sim \mathcal{U}(0, L_{\mathrm{init}})`.
     rot: bool, optional
         If ``True``, applies a learnable quaternion rotation to all atoms.
         Default = ``False``
@@ -190,9 +164,7 @@ class HerglotzPE(nn.Module):
         self.L_init = L_init
         self.rot = rot
 
-        self.sigmas_mod = nn.Parameter(torch.empty(self.num_atoms))
-        self.sigmas_arg = nn.Parameter(torch.empty(self.num_atoms))
-
+        self.sigmas = nn.Parameter(torch.empty(self.num_atoms))
         self.register_buffer("A_real0", torch.empty(self.num_atoms, 3))
         self.register_buffer("A_imag0", torch.empty(self.num_atoms, 3))
 
@@ -218,8 +190,7 @@ class HerglotzPE(nn.Module):
             )
             self.A_real0.copy_(aR)
             self.A_imag0.copy_(aI)
-            nn.init.uniform_(self.sigmas_mod, 0, self.L_init)
-            nn.init.uniform_(self.sigmas_arg, 0, 2 * math.pi)
+            nn.init.uniform_(self.sigmas, 0, self.L_init)
 
             if self.qrot is not None:
                 self.qrot.zero_()
@@ -239,11 +210,30 @@ class HerglotzPE(nn.Module):
 
         return aR, aI
 
-    @property
-    def out_dim(self) -> int:
-        return self.num_atoms
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass of the Herglotz positional encoding.
+
+        This method computes the closed-form Herglotz feature map by projecting
+        Cartesian input points onto the learned atom directions, applying the
+        learned phase and magnitude parameters.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Tensor of shape ``(..., 3)`` containing Cartesian coordinates.
+
+        Returns
+        -------
+        torch.Tensor
+            Herglotz features evaluated at the input points,
+            with shape ``(..., num_atoms)``.
+
+        Raises
+        ------
+        ValueError
+            If ``x.shape[-1] != 3``.
+        """
 
         if x.shape[-1] != 3:
             raise ValueError(
@@ -253,8 +243,7 @@ class HerglotzPE(nn.Module):
             x,
             self.A_real0,
             self.A_imag0,
-            self.sigmas_mod,
-            self.sigmas_arg,
+            self.sigmas,
             self.inv_const,
             self.qrot,
         )
@@ -267,7 +256,7 @@ class FourierPE(nn.Module):
     This module implements a learnable sinusoidal feature map of the form
 
     .. math::
-        \psi(x) = \sin\bigl(\omega_0 (x \Omega^\top + b)\bigr),
+        \psi^{\mathrm{F}}(x) = \sin\bigl(\omega_0 (x \Omega^\top + b)\bigr),
 
     where:
     - :math:`W \in \mathbb{R}^{N \times d}` is a learnable weight matrix,
@@ -319,9 +308,21 @@ class FourierPE(nn.Module):
                 bound = 1 / math.sqrt(self.input_dim)
                 nn.init.uniform_(self.bias, -bound, bound)
 
-    @property
-    def out_dim(self) -> int:
-        return self.num_atoms
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass of the learned Fourier positional encoding.
+
+        This method applies a learned linear projection of the input coordinates,
+        followed by sinusoidal activation with fixed frequency scaling.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape ``(..., input_dim)``.
+
+        Returns
+        -------
+        torch.Tensor
+            Learned Fourier features with shape ``(..., num_atoms)``.
+        """
         return PE.fourier(x, self.Omega, self.omega0, self.bias)

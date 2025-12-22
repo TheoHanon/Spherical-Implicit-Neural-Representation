@@ -53,8 +53,7 @@ def herglotz(
     x: torch.Tensor,
     A_real: torch.Tensor,
     A_imag: torch.Tensor,
-    sigma_mod: torch.Tensor,
-    sigma_arg: torch.Tensor,
+    sigma: torch.Tensor,
     inv_const: torch.Tensor,
     qrot: Optional[torch.Tensor] = None,
 ):
@@ -67,18 +66,13 @@ def herglotz(
     ax_R = F.linear(x, A_real)  # (..., num_atoms)
     ax_I = F.linear(x, A_imag)
 
-    rho = F.softplus(sigma_mod)
-    th = sigma_arg
+    rho = F.softplus(sigma)
 
-    c = torch.cos(th)
-    s = torch.sin(th)
+    exp_term = torch.exp(rho * (ax_R - 1.0))
+    cos_term = torch.cos(rho * ax_I)
+    sin_term = torch.sin(rho * ax_I)
 
-    r = ax_R * c - ax_I * s
-    s_ = ax_R * s + ax_I * c
-
-    exp_term = torch.exp(rho * (r - 1.0))
-    cos_term = torch.cos(rho * s_)
-    sin_term = torch.sin(rho * s_)
-
-    real_h = exp_term * ((1.0 + 2.0 * rho * r) * cos_term - (2.0 * rho * s_) * sin_term)
+    real_h = exp_term * (
+        (1.0 + 2.0 * rho * ax_R) * cos_term - (2.0 * rho * ax_I) * sin_term
+    )
     return inv_const * real_h
