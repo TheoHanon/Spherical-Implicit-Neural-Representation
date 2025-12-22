@@ -45,7 +45,6 @@ model = HerglotzNet(
 # Random spherical angles (θ,φ)
 x = torch.rand(16,2) * torch.tensor([torch.pi, 2*torch.pi])
 y = model(x)
-print(y.shape)  # → (16,1)
 ```
 
 ---
