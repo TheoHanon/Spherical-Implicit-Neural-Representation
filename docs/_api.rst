@@ -25,7 +25,7 @@ Ready-to-use networks combining an encoding and a backbone:
 
 - :class:`~spherical_inr.inr.INR` — generic composition wrapper
 - :class:`~spherical_inr.inr.SirenNet` — Fourier features on angles + sine MLP
-- :class:`~spherical_inr.inr.HerglotzNet` — angle input with internal spherical→Cartesian conversion
+- :class:`~spherical_inr.inr.HerglotzNet` — Herglotz map + sine MLP
 - :class:`~spherical_inr.inr.SphericalSirenNet` — spherical harmonics on angles + sine MLP
 
 `Positional encodings`_
