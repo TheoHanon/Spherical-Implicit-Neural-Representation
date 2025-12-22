@@ -2,7 +2,7 @@ import unittest
 import torch
 import math
 
-from spherical_inr import differentiation as D
+from spherical_inr import diffops as D
 
 
 class TestGradDivFunctions(unittest.TestCase):

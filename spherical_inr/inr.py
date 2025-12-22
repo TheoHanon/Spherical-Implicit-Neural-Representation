@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from . import _coords as T
+from . import coords as T
 
 from .positional_encoding import (
     HerglotzPE,

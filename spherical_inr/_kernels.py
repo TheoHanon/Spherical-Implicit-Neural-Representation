@@ -5,7 +5,6 @@ import torch
 import torch.nn.functional as F
 
 from .third_party.locationencoder.sh import SH
-from . import _coords as T
 
 
 def fourier(

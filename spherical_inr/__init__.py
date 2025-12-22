@@ -19,3 +19,4 @@ from .inr import *
 from .positional_encoding import *
 from .mlp import *
 from .diffops import *
+from .coords import *

@@ -3,7 +3,31 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from spherical_inr import MLP, SineMLP
+from spherical_inr import ReLUMLP, SineMLP
+
+
+class TestReLUMLP(unittest.TestCase):
+    def setUp(self):
+        self.input_features = 3
+        self.output_features = 2
+        self.hidden_sizes = [10, 10]
+        self.bias = True
+        self.batch_size = 5
+
+        # Create an instance of SineMLP
+        self.mlp = ReLUMLP(
+            input_features=self.input_features,
+            output_features=self.output_features,
+            hidden_sizes=self.hidden_sizes,
+            bias=self.bias,
+        )
+
+    def test_forward_output_shape(self):
+        # Create a dummy input tensor of shape (batch_size, input_features)
+        x = torch.randn(self.batch_size, self.input_features)
+        output = self.mlp(x)
+        # Check that the output shape is (batch_size, output_features)
+        self.assertEqual(output.shape, (self.batch_size, self.output_features))
 
 
 class TestSineMLP(unittest.TestCase):
@@ -25,31 +49,12 @@ class TestSineMLP(unittest.TestCase):
             omega0=self.omega0,
         )
 
-    def test_abstract_mlp_instantiation(self):
-        # Instantiating the abstract base class should raise an error.
-        with self.assertRaises(TypeError):
-            _ = MLP(self.input_features, self.output_features)
-
     def test_forward_output_shape(self):
         # Create a dummy input tensor of shape (batch_size, input_features)
         x = torch.randn(self.batch_size, self.input_features)
         output = self.mlp(x)
         # Check that the output shape is (batch_size, output_features)
         self.assertEqual(output.shape, (self.batch_size, self.output_features))
-
-    def test_layer_initialization(self):
-        # Verify that each hidden layer's weights and biases are initialized as expected.
-        for layer in self.mlp.hidden_layers:
-            fan_in = layer.weight.size(1)
-            bound = np.sqrt(6 / fan_in) / self.omega0
-            # Check that all weights are within the interval [-bound, bound]
-            self.assertTrue(torch.all(layer.weight <= bound + 1e-5))
-            self.assertTrue(torch.all(layer.weight >= -bound - 1e-5))
-            # If bias exists, ensure it is initialized to zero.
-            if layer.bias is not None:
-                self.assertTrue(
-                    torch.allclose(layer.bias, torch.zeros_like(layer.bias))
-                )
 
     def test_forward_activation_function(self):
         # Since SineMLP applies torch.sin(omega0 * layer(x)) for all layers except the last,

@@ -8,6 +8,7 @@ Documentation
    modules/positional_encoding
    modules/mlp
    modules/inr
+   modules/coords
    modules/diffops
 
 
