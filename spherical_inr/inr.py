@@ -275,7 +275,7 @@ class SphericalSirenNet(nn.Module):
 
     .. math::
         f(\theta,\phi)
-        = \operatorname{SineMLP}\bigl(\psi_{\mathrm{SH}}(\theta,\phi)\bigr),
+        = \operatorname{SineMLP}\bigl(\psi^{\mathrm{SH}}(\theta,\phi)\bigr),
 
     where :math:`\psi^{\mathrm{SH}}` denotes the real spherical harmonics
     positional encoding.

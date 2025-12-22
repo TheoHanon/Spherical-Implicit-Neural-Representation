@@ -6,14 +6,18 @@ Welcome to Spherical INRs
   .. grid-item::
     :columns: 12 12 8 8
 
-    A PyTorch library for building **Implicit Neural Representations** on spherical and 3D domains.
+    ``spherical-inr`` is a lightweight PyTorch toolbox for building implicit neural
+    representations (INRs) of functions defined on the sphere :math:`\mathbb{S}^2`.
 
-    **Features**:
+    The library is designed around a clean separation of concerns:
 
-    - **Positional Encodings**: Herglotz, Fourier, Spherical & Solid Harmonics  
-    - **INR Wrappers**: `INR`, `HerglotzNet`, `SirenNet`, and spherical variants  
-    - **MLP backbones**: Standard & Sine-activated (`ReluMLP` and `SineMLP`)  
-    - **Differentiation** utilities  
+    - **Positional encodings** define the geometric and spectral structure of the representation.
+    - **MLP backbones** map encoded coordinates to scalar or vector-valued fields.
+    - **Model wrappers** combine encodings and networks into ready-to-use spherical INRs.
+    - **Differential operators** enable gradients, divergence, and Laplacians through automatic differentiation.
+
+    All components are composable and can be used independently, allowing users to
+    move easily between simple baselines and more structured models.  
         
   .. grid-item-card:: Contents
     :class-title: sd-fs-5
@@ -23,7 +27,6 @@ Welcome to Spherical INRs
       :maxdepth: 1
 
       Installing <_install.rst>
-      Conventions <_convention.rst>
       API <_api.rst>
       Tutorials <_tutorial.rst>
       References <_reference.rst>

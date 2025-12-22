@@ -51,6 +51,5 @@ html_sidebars = {
     "_api": [],
     "_install": [],
     "_tutorial": [],
-    "_convention": [],
     "_reference": [],
 }

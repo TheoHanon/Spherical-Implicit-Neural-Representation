@@ -1,3 +1,5 @@
+r"""MLP backbones (ReLU or sine) for parameterizing implicit neural representations."""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

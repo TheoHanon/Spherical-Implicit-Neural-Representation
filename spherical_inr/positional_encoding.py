@@ -1,3 +1,5 @@
+r"""Positional encodings for spherical data via harmonics, Fourier features, and Herglotz kernels."""
+
 from __future__ import annotations
 
 import torch

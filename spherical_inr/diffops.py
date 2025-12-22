@@ -1,3 +1,5 @@
+r"""Differential operators (gradient, divergence, Laplacian) in Cartesian and spherical coordinates."""
+
 import torch
 import warnings
 
