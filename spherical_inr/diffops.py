@@ -20,28 +20,6 @@ def _gradient(
     create_graph: bool = False,
     retain_graph: bool = False,
 ) -> torch.Tensor:
-    r"""
-    Compute the gradient of a function with respect to its inputs.
-
-    Given a function \( f: \mathbb{R}^n \to \mathbb{R} \), the gradient is defined as
-    \[
-    \nabla_x f(x) = \left(\frac{\partial f}{\partial x_1}, \frac{\partial f}{\partial x_2}, \dots, \frac{\partial f}{\partial x_n}\right)
-    \]
-    This function computes the derivative of `outputs` with respect to `inputs` using automatic differentiation.
-    If the derivative is not defined (i.e. is None), it returns a zero tensor matching the shape of `inputs`,
-    preserving gradient tracking when requested.
-
-    Args:
-        outputs (torch.Tensor): Tensor representing the function values \( f(x) \).
-        inputs (torch.Tensor): Tensor representing the input variables \( x \).
-        create_graph (bool, optional): If True, constructs the gradient graph to enable higher-order derivatives.
-            (default: False)
-        retain_graph (bool, optional): If True, retains the computational graph for further operations.
-            (default: False)
-
-    Returns:
-        torch.Tensor: The computed gradient \( \nabla_x f(x) \).
-    """
 
     grad = torch.autograd.grad(
         outputs,
@@ -78,14 +56,20 @@ def cartesian_gradient(
     This function computes :math:`\nabla f(x)` with respect to the Cartesian coordinates provided in ``inputs``.
     Enabling the ``track`` parameter allows for the construction of higher-order derivative graphs.
 
-    Args:
-        outputs (torch.Tensor): Tensor representing the function values :math:`f(x)`.
-        inputs (torch.Tensor): Tensor representing the Cartesian coordinates :math:`x`.
-        track (bool, optional): If True, enables gradient tracking for higher-order derivatives.
-            (default: False)
+    Parameters
+    ----------
+    outputs: torch.Tensor
+        Tensor representing the function values :math:`f(x)`.
+    inputs: torch.Tensor
+        Tensor representing the Cartesian coordinates :math:`x`.
+    track: bool, optional
+        If True, enables gradient tracking for higher-order derivatives.
+        Default = ``False``
 
-    Returns:
-        torch.Tensor: The gradient :math:`\nabla f(x)` in Cartesian coordinates.
+    Returns
+    -------
+    torch.Tensor:
+        The gradient :math:`\nabla f(x)` in Cartesian coordinates.
     """
 
     return _gradient(outputs, inputs, create_graph=track, retain_graph=track)
@@ -104,16 +88,22 @@ def spherical_gradient(
     This function computes the gradient of :math:`f(r,\theta,\phi)` with respect to the spherical coordinates.
     The input tensor ``inputs`` must have three components representing :math:`[r, \theta, \phi]`.
 
-    Args:
-        outputs (torch.Tensor): Tensor representing the function values :math:`f(r, \theta, \phi)`.
-        inputs (torch.Tensor): Tensor of shape (..., 3) representing spherical coordinates :math:`[r, \theta, \phi]`.
-        track (bool, optional): If True, enables gradient tracking for higher-order derivatives.
-            (default: False)
+    Parameters
+    ----------
+    outputs: torch.Tensor
+        Tensor representing the function values :math:`f(r, \theta, \phi)`.
+    inputs: torch.Tensor
+        Tensor of shape (..., 3) representing spherical coordinates :math:`[r, \theta, \phi]`.
+    track: bool, optional
+        If True, enables gradient tracking for higher-order derivatives.
+        Default = ``False``
 
-    Returns:
+    Returns
+    -------
         torch.Tensor: The spherical gradient with components scaled as above.
 
-    Raises:
+    Raises
+    ------
         ValueError: If ``inputs`` does not have three components.
     """
 
@@ -147,22 +137,30 @@ def s2_gradient(
     For a function :math:`f(\theta, \phi)` defined on S², the gradient is expressed as
 
     .. math::
-        \nabla_{S^2} f = \hat{\theta}\,\frac{\partial f}{\partial \theta} \;+\; \hat{\phi}\,\frac{1}{\sin\theta}\frac{\partial f}{\partial \phi}.
+        \nabla_{\mathbb{S}^2} f = \hat{\theta}\,\frac{\partial f}{\partial \theta} \;+\; \hat{\phi}\,\frac{1}{\sin\theta}\frac{\partial f}{\partial \phi}.
 
     This function computes the gradient of :math:`f(\theta, \phi)` on S². The input tensor ``inputs`` must have
     two components corresponding to :math:`(\theta, \phi)`.
 
-    Args:
-        outputs (torch.Tensor): Tensor representing the function values :math:`f(\theta, \phi)`.
-        inputs (torch.Tensor): Tensor of shape (..., 2) representing spherical coordinates :math:`(\theta, \phi)`.
-        track (bool, optional): If True, enables gradient tracking for higher-order derivatives.
-            (default: False)
+    Parameters
+    ----------
+    outputs: torch.Tensor
+        Tensor representing the function values :math:`f(\theta, \phi)`.
+    inputs: torch.Tensor
+        Tensor of shape (..., 2) representing spherical coordinates :math:`(\theta, \phi)`.
+    track: bool, optional
+        If True, enables gradient tracking for higher-order derivatives.
+        Default = ``False``
 
-    Returns:
-        torch.Tensor: The gradient on S², :math:`\nabla_{S^2} f`.
+    Returns
+    -------
+    torch.Tensor:
+        The gradient on S², :math:`\nabla_{\mathbb{S}^2} f`.
 
-    Raises:
-        ValueError: If ``inputs`` does not have two components.
+    Raises
+    ------
+    ValueError:
+        If ``inputs`` does not have two components.
     """
 
     if inputs.size(-1) != 2:
@@ -199,15 +197,20 @@ def cartesian_divergence(
     This function computes the divergence by summing the partial derivatives of each component of the vector field
     with respect to its corresponding Cartesian coordinate.
 
-    Args:
-        outputs (torch.Tensor): Tensor representing the vector field, where the last dimension contains the components
-            of :math:`\mathbf{F}`.
-        inputs (torch.Tensor): Tensor representing the Cartesian coordinates :math:`x`.
-        track (bool, optional): If True, enables gradient tracking for higher-order derivatives.
-            (default: False)
+    Parameters
+    ----------
+    outputs: torch.Tensor
+        Tensor representing the vector field, where the last dimension contains the components of :math:`\mathbf{F}`.
+    inputs: torch.Tensor
+        Tensor representing the Cartesian coordinates :math:`x`.
+    track: bool, optional
+        If True, enables gradient tracking for higher-order derivatives.
+        Default = ``False``
 
-    Returns:
-        torch.Tensor: The divergence :math:`\nabla \cdot \mathbf{F}`.
+    Returns
+    -------
+    torch.Tensor:
+        The divergence :math:`\nabla \cdot \mathbf{F}`.
     """
 
     outputs_to_grad = [outputs[..., i] for i in range(outputs.size(-1))]
@@ -240,17 +243,25 @@ def spherical_divergence(
     This function computes the divergence of the vector field in spherical coordinates.
     The tensor ``outputs`` must have three components.
 
-    Args:
-        outputs (torch.Tensor): Tensor of shape (..., 3) representing the vector field in spherical coordinates.
-        inputs (torch.Tensor): Tensor of shape (..., 3) representing spherical coordinates :math:`[r, \theta, \phi]`.
-        track (bool, optional): If True, enables gradient tracking for higher-order derivatives.
-            (default: False)
+    Parameters
+    ----------
+    outputs: torch.Tensor
+        Tensor of shape (..., 3) representing the vector field in spherical coordinates.
+    inputs: torch.Tensor
+        Tensor of shape (..., 3) representing spherical coordinates :math:`[r, \theta, \phi]`.
+    track: bool, optional
+        If True, enables gradient tracking for higher-order derivatives.
+        Default = ``False``
 
-    Returns:
-        torch.Tensor: The divergence :math:`\nabla \cdot \mathbf{F}` in spherical coordinates.
+    Returns
+    -------
+    torch.Tensor:
+        The divergence :math:`\nabla \cdot \mathbf{F}` in spherical coordinates.
 
-    Raises:
-        ValueError: If ``outputs`` does not have three components.
+    Raises
+    ------
+    ValueError:
+        If ``outputs`` does not have three components.
     """
 
     if outputs.size(-1) != 3:
@@ -298,23 +309,31 @@ def s2_divergence(
     For a vector field on S², :math:`\mathbf{F}(\theta,\phi) = \left[F_\theta,\, F_\phi\right]`, the divergence is defined as
 
     .. math::
-        \nabla_{S^2} \cdot \mathbf{F} = \frac{1}{\sin\theta}\frac{\partial}{\partial \theta}\Bigl(\sin\theta F_\theta\Bigr)
+        \nabla_{\mathbb{S}^2} \cdot \mathbf{F} = \frac{1}{\sin\theta}\frac{\partial}{\partial \theta}\Bigl(\sin\theta F_\theta\Bigr)
         \;+\; \frac{1}{\sin\theta}\frac{\partial F_\phi}{\partial \phi}.
 
     This function computes the divergence of the vector field on S².
     The tensor ``outputs`` must have two components.
 
-    Args:
-        outputs (torch.Tensor): Tensor representing the vector field on S² with two components.
-        inputs (torch.Tensor): Tensor of shape (..., 2) representing spherical coordinates :math:`(\theta, \phi)`.
-        track (bool, optional): If True, enables gradient tracking for higher-order derivatives.
-            (default: False)
+    Parameters
+    ----------
+    outputs: torch.Tensor
+        Tensor representing the vector field on S² with two components.
+    inputs: torch.Tensor
+        Tensor of shape (..., 2) representing spherical coordinates :math:`(\theta, \phi)`.
+    track: bool, optional
+        If True, enables gradient tracking for higher-order derivatives.
+        Default = ``False``
 
-    Returns:
-        torch.Tensor: The divergence :math:`\nabla_{S^2} \cdot \mathbf{F}` on the 2-sphere.
+    Returns
+    -------
+    torch.Tensor:
+        The divergence :math:`\nabla_{\mathbb{S}^2} \cdot \mathbf{F}` on the 2-sphere.
 
-    Raises:
-        ValueError: If ``outputs`` does not have two components.
+    Raises
+    ------
+    ValueError:
+        If ``outputs`` does not have two components.
     """
 
     if outputs.size(-1) != 2:
@@ -365,14 +384,19 @@ def cartesian_laplacian(
     This function computes the gradient of :math:`f(x)` with respect to the Cartesian coordinates ``x``
     and then evaluates its divergence to obtain the Laplacian. The ``track`` parameter enables higher-order derivative tracking.
 
-    Args:
-        outputs (torch.Tensor): Tensor representing the function values :math:`f(x)`.
-        inputs (torch.Tensor): Tensor representing Cartesian coordinates :math:`x`.
-        track (bool, optional): If True, enables gradient tracking for higher-order derivatives.
-            (default: False)
-
-    Returns:
-        torch.Tensor: The Laplacian :math:`\Delta f` of the function.
+    Parameters
+    ----------
+    outputs: torch.Tensor
+        Tensor representing the function values :math:`f(x)`.
+    inputs: torch.Tensor
+        Tensor representing Cartesian coordinates :math:`x`.
+    track: bool, optional
+        If True, enables gradient tracking for higher-order derivatives.
+        Default = ``False``
+    Returns
+    -------
+    torch.Tensor:
+        The Laplacian :math:`\Delta f` of the function.
     """
 
     grad = cartesian_gradient(outputs, inputs, track=True)
@@ -403,14 +427,20 @@ def spherical_laplacian(
     This function computes the gradient of :math:`f(r,\theta,\phi)` in spherical coordinates and then
     its divergence to obtain the Laplacian.
 
-    Args:
-        outputs (torch.Tensor): Tensor representing the function values :math:`f(r,\theta,\phi)`.
-        inputs (torch.Tensor): Tensor representing spherical coordinates :math:`[r, \theta, \phi]`.
-        track (bool, optional): If True, enables gradient tracking for higher-order derivatives.
-            (default: False)
+    Parameters
+    ----------
+    outputs: torch.Tensor
+        Tensor representing the function values :math:`f(r,\theta,\phi)`.
+    inputs: torch.Tensor
+        Tensor representing spherical coordinates :math:`[r, \theta, \phi]`.
+    track: bool, optional
+        If True, enables gradient tracking for higher-order derivatives.
+        Default = ``False``
 
-    Returns:
-        torch.Tensor: The Laplacian :math:`\Delta f` in spherical coordinates.
+    Returns
+    -------
+    torch.Tensor:
+        The Laplacian :math:`\Delta f` in spherical coordinates.
     """
 
     grad = spherical_gradient(outputs, inputs, track=True)
@@ -428,25 +458,31 @@ def s2_laplacian(
     The Laplacian on S² is defined as the divergence of the gradient on the sphere:
 
     .. math::
-        \Delta_{S^2} f = \nabla_{S^2} \cdot \left(\nabla_{S^2} f\right).
+        \Delta_{\mathbb{S}^2} f = \nabla_{\mathbb{S}^2} \cdot \left(\nabla_{\mathbb{S}^2} f\right).
 
     For a function :math:`f(\theta,\phi)` on S², the Laplacian expands to
 
     .. math::
-        \Delta_{S^2} f = \frac{1}{\sin\theta}\frac{\partial}{\partial \theta}\Bigl(\sin\theta \frac{\partial f}{\partial \theta}\Bigr)
+        \Delta_{\mathbb{S}^2} f = \frac{1}{\sin\theta}\frac{\partial}{\partial \theta}\Bigl(\sin\theta \frac{\partial f}{\partial \theta}\Bigr)
         \;+\; \frac{1}{\sin^2\theta}\frac{\partial^2 f}{\partial \phi^2}.
 
     This function computes the gradient of :math:`f(\theta,\phi)` on S² and then evaluates its divergence
     to obtain the Laplacian.
 
-    Args:
-        outputs (torch.Tensor): Tensor representing the function values :math:`f(\theta,\phi)`.
-        inputs (torch.Tensor): Tensor representing spherical coordinates :math:`(\theta, \phi)` on S².
-        track (bool, optional): If True, enables gradient tracking for higher-order derivatives.
-            (default: False)
+    Parameters
+    ----------
+    outputs: torch.Tensor
+         Tensor representing the function values :math:`f(\theta,\phi)`.
+    inputs: torch.Tensor
+        Tensor representing spherical coordinates :math:`(\theta, \phi)` on S².
+    track: bool, optional
+        If True, enables gradient tracking for higher-order derivatives.
+        Default = ``False``
 
-    Returns:
-        torch.Tensor: The Laplacian :math:`\Delta_{S^2} f` on the 2-sphere.
+    Returns
+    -------
+    torch.Tensor:
+        The Laplacian :math:`\Delta_{\mathbb{S}^2} f` on the 2-sphere.
     """
 
     grad = s2_gradient(outputs, inputs, track=True)

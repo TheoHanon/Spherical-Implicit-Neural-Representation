@@ -81,17 +81,9 @@ class SphericalHarmonicsPE(nn.Module):
 
     Parameters
     ----------
-    num_atoms:
+    num_atoms: int
         Number of spherical harmonic basis functions returned.
 
-    Input
-    -----
-    x:
-        Tensor of shape ``(..., 2)`` containing :math:`(\theta, \phi)`.
-
-    Output
-    ------
-    Tensor of shape ``(..., num_atoms)``.
     """
 
     def __init__(
@@ -176,27 +168,18 @@ class HerglotzPE(nn.Module):
 
     Parameters
     ----------
-    num_atoms:
+    num_atoms: int
         Number of Herglotz atoms (output features).
-    L_init:
+    L_init: int
         Upper bound used to initialize the magnitude parameters
         :math:`\sigma_k^{\mathrm{mod}} \sim \mathcal{U}(0, L_{\mathrm{init}})`.
-    rot:
+    rot: bool, optional
         If ``True``, applies a learnable quaternion rotation to all atoms.
-
-    Input
-    -----
-    x:
-        Tensor of shape ``(..., 3)`` containing Cartesian coordinates.
-
-    Output
-    ------
-    Tensor of shape ``(..., num_atoms)``.
+        Default = ``False``
 
     Notes
     -----
-    This module is **Cartesian-only**.
-    If your data is given in spherical coordinates :math:`(\theta,\phi)`,
+    This module is **Cartesian-only**. If your data is given in spherical coordinates :math:`(\theta,\phi)`,
     use a wrapper to convert inputs to Cartesian coordinates before applying this encoding.
     """
 
@@ -296,23 +279,16 @@ class FourierPE(nn.Module):
 
     Parameters
     ----------
-    num_atoms:
+    num_atoms: int
         Number of output features.
-    input_dim:
+    input_dim: int
         Dimension :math:`d` of the input space.
-    bias:
+    bias: bool, optional
         Whether to include a learnable bias term :math:`b`.
-    omega0:
+        Default = ``True``
+    omega0: float, optional
         Frequency scaling factor :math:`\omega_0`.
-
-    Input
-    -----
-    x:
-        Tensor of shape ``(..., input_dim)``.
-
-    Output
-    ------
-    Tensor of shape ``(..., num_atoms)``.
+        Default = ``1.0``
     """
 
     def __init__(

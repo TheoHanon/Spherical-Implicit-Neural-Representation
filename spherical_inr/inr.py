@@ -22,6 +22,26 @@ __all__ = ["INR", "SirenNet", "HerglotzNet", "SphericalSirenNet"]
 
 
 class INR(nn.Module):
+    r"""
+    Composable implicit neural representation.
+
+    This class represents an implicit function as the composition
+
+    .. math::
+        f(x) = \mathrm{MLP}(\psi(x)),
+
+    where :math:`\psi` is a positional encoding and the MLP is a pointwise
+    neural network.
+
+    Parameters
+    ----------
+    positional_encoding : PositionalEncoding
+        Positional encoding module :math:`\psi`.
+        Must expose an ``out_dim`` attribute and be callable on a tensor.
+    mlp : MLP
+        Backbone network applied to the encoded features.
+        Must expose ``in_dim`` and ``out_dim`` attributes and be callable.
+    """
 
     def __init__(self, positional_encoding: PositionalEncoding, mlp: MLP):
         super().__init__()
@@ -44,6 +64,24 @@ class INR(nn.Module):
         self.mlp = mlp
 
     def forward(self, x: torch.Tensor):
+        r"""
+        Evaluate the implicit neural representation.
+
+        This method applies the positional encoding followed by the MLP backbone.
+
+        Parameters
+        ----------
+        x: torch.Tensor
+            Input tensor passed to the positional encoding.
+            Shape and interpretation depend on the chosen encoding ``pe``.
+
+        Returns
+        -------
+        torch.Tensor
+            Output of the MLP applied to the encoded input.
+            Shape ``(..., mlp.out_dim)``.
+        """
+
         return self.mlp(self.pe(x))
 
 
@@ -56,44 +94,38 @@ class SirenNet(nn.Module):
     to the angles, followed by a sine-activated multilayer perceptron:
 
     .. math::
-        f(\theta,\phi) = \mathrm{MLP}_{\sin}\bigl(\psi_{\mathrm{Fourier}}(\theta,\phi)\bigr),
+        f(\theta,\phi) = \operatorname{SineMLP}\bigl(\psi_{\mathrm{Fourier}}(\theta,\phi)\bigr),
 
     with
 
     .. math::
-        \psi_{\mathrm{Fourier}}(\theta,\phi)
-        = \sin\!\bigl(\omega_0^{\mathrm{PE}}([\theta,\phi] W^\top + b)\bigr).
+        \psi_{\operatorname{Fourier}}(\theta,\phi)
+        = \sin\!\Bigl(\omega_0^{\mathrm{PE}}([\theta,\phi] W^\top + b)\Bigr).
 
     No coordinate transformation is applied: the angles are treated as inputs
     in :math:`\mathbb{R}^2`.
 
     Parameters
     ----------
-    num_atoms:
+    num_atoms: int
         Number of Fourier features (output channels of the positional encoding).
-    mlp_sizes:
+    mlp_sizes: list[int]
         Hidden-layer widths of the sine-activated MLP.
-    output_dim:
+    output_dim: int
         Dimensionality of the network output.
-    bias:
+    bias: bool, optional
         Whether to include bias terms in both the positional encoding and the MLP.
-    omega0_pe:
+        Default = ``True``
+    omega0_pe: float, optional
         Frequency factor :math:`\omega_0^{\mathrm{PE}}` used in the Fourier encoding.
-    omega0_mlp:
+        Default = ``30.0``
+    omega0_mlp: float, optional
         Frequency factor :math:`\omega_0^{\mathrm{MLP}}` used in the sine activations
         of the MLP.
-    input_dim:
+        Default = ``30.0``
+    input_dim: int, optional
         Dimensionality of the input space. Must be ``2`` for :math:`(\theta,\phi)`.
-
-    Input
-    -----
-    x:
-        Tensor of shape ``(..., 2)`` containing spherical angles
-        :math:`(\theta,\phi)` in radians.
-
-    Output
-    ------
-    Tensor of shape ``(..., output_dim)``.
+        Default = ``2``
     """
 
     def __init__(
@@ -117,6 +149,24 @@ class SirenNet(nn.Module):
         )
 
     def forward(self, x: torch.Tensor):
+        r"""
+        Evaluate the SIREN on spherical angles.
+
+        The input angles :math:`(\theta,\phi)` are encoded using learned Fourier
+        features and then processed by a sine-activated MLP.
+
+        Parameters
+        ----------
+        x: torch.Tensor
+            Tensor of shape ``(..., 2)`` containing spherical angles
+            :math:`(\theta,\phi)` in radians.
+
+        Returns
+        -------
+        torch.Tensor
+            Network output of shape ``(..., output_dim)``.
+        """
+
         return self.mlp(self.pe(x))
 
 
@@ -140,7 +190,7 @@ class HerglotzNet(nn.Module):
 
     .. math::
         f(\theta,\phi)
-        = \mathrm{MLP}_{\sin}
+        = \operatorname{SineMLP}
         \Bigl(
             \psi_{\mathrm{H}}\bigl(x(\theta,\phi)\bigr)
         \Bigr),
@@ -150,33 +200,27 @@ class HerglotzNet(nn.Module):
 
     Parameters
     ----------
-    num_atoms:
+    num_atoms: int
         Number of Herglotz atoms (output channels of the positional encoding).
-    mlp_sizes:
+    mlp_sizes: list[int]
         Hidden-layer widths of the sine-activated MLP.
-    output_dim:
+    output_dim: int
         Dimensionality of the network output.
-    bias:
+    bias: bool, optional
         Whether to include bias terms in the MLP.
-    L_init:
+        Default = ``True``
+    L_init: int, optional
         Upper bound used to initialize the Herglotz magnitude parameters
         :math:`\rho_k`.
-    omega0_mlp:
+        Default = ``15``
+    omega0_mlp: float, optional
         Frequency factor :math:`\omega_0^{\mathrm{MLP}}` used in the sine
         activations of the MLP.
-    rot:
+        Default = ``1.0``
+    rot: bool, optional
         If ``True``, enables a learnable quaternion rotation in the
         Herglotz positional encoding.
-
-    Input
-    -----
-    x:
-        Tensor of shape ``(..., 2)`` containing spherical angles
-        :math:`(\theta,\phi)` in radians.
-
-    Output
-    ------
-    Tensor of shape ``(..., output_dim)``.
+        Default = ``False``
 
     """
 
@@ -203,6 +247,30 @@ class HerglotzNet(nn.Module):
         )
 
     def forward(self, x: torch.Tensor):
+        r"""
+        Evaluate the Herglotz-based SIREN on the 2-sphere.
+
+        The input angles :math:`(\theta,\phi)` are first mapped to Cartesian
+        coordinates on the unit sphere, then encoded using the Cartesian Herglotz positional encoding and
+        processed by a sine-activated MLP.
+
+        Parameters
+        ----------
+        x: torch.Tensor
+            Tensor of shape ``(..., 2)`` containing spherical angles
+            :math:`(\theta,\phi)` in radians.
+
+        Returns
+        -------
+        torch.Tensor
+            Network output of shape ``(..., output_dim)``.
+
+        Raises
+        ------
+        ValueError
+            If ``x.shape[-1] != 2``.
+        """
+
         if x.shape[-1] != 2:
             raise ValueError(
                 f"Expected input shape (..., 2) for spherical coordinates (θ, φ), but got {x.shape}."
@@ -223,36 +291,28 @@ class SphericalSirenNet(nn.Module):
 
     .. math::
         f(\theta,\phi)
-        = \mathrm{MLP}_{\sin}\bigl(\psi_{\mathrm{SH}}(\theta,\phi)\bigr),
+        = \operatorname{SineMLP}\bigl(\psi_{\mathrm{SH}}(\theta,\phi)\bigr),
 
     where :math:`\psi_{\mathrm{SH}}` denotes the real spherical harmonics
     positional encoding.
 
     Parameters
     ----------
-    num_atoms:
+    num_atoms: int
         Number of spherical harmonic basis functions retained
         (i.e. the first ``num_atoms`` channels in the standard
         :math:`(\ell,m)` ordering).
-    mlp_sizes:
+    mlp_sizes: list[int]
         Hidden-layer widths of the sine-activated MLP.
-    output_dim:
+    output_dim: int
         Dimensionality of the network output.
-    bias:
+    bias: bool, optional
         Whether to include bias terms in the MLP.
-    omega0_mlp:
+    omega0_mlp: float, optional
         Frequency factor :math:`\omega_0^{\mathrm{MLP}}` used in the sine activations
         of the MLP.
+        Default : ``1.0``.
 
-    Input
-    -----
-    x:
-        Tensor of shape ``(..., 2)`` containing spherical angles
-        :math:`(\theta,\phi)` in radians.
-
-    Output
-    ------
-    Tensor of shape ``(..., output_dim)``.
     """
 
     def __init__(
@@ -277,6 +337,29 @@ class SphericalSirenNet(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        r"""
+        Evaluate the spherical-harmonics SIREN.
+
+        The input angles :math:`(\theta,\phi)` are encoded using real spherical
+        harmonics and then processed by a sine-activated MLP.
+
+        Parameters
+        ----------
+        x: torch.Tensor
+            Tensor of shape ``(..., 2)`` containing spherical angles
+            :math:`(\theta,\phi)` in radians.
+
+        Returns
+        -------
+        torch.Tensor
+            Network output of shape ``(..., output_dim)``.
+
+        Raises
+        ------
+        ValueError
+            If ``x.shape[-1] != 2``.
+        """
+
         if x.shape[-1] != 2:
             raise ValueError(
                 f"Expected input shape (..., 2) for spherical coordinates (θ, φ), but got {x.shape}."
