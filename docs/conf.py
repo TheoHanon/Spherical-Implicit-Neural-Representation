@@ -53,3 +53,6 @@ html_sidebars = {
     "_tutorial": [],
     "_reference": [],
 }
+
+napoleon_numpy_docstring = True
+napoleon_use_ivar = True

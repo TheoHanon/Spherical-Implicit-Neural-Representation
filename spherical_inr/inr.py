@@ -33,11 +33,10 @@ class INR(nn.Module):
 
     Parameters
     ----------
-    positional_encoding : 
+    positional_encoding : torch.nn.Module
         Positional encoding module :math:`\psi`.
-    mlp : 
+    mlp : torch.nn.Module
         Backbone network applied to the encoded features.
-
 
     Attributes
     ----------
@@ -45,6 +44,7 @@ class INR(nn.Module):
         Positional encoding module :math:`\psi`.
     mlp : torch.nn.Module
         Backbone network applied to the encoded features.
+
 
     """
 
@@ -124,7 +124,8 @@ class SirenNet(nn.Module):
     pe : FourierPE
         Fourier positional encoding module.
     mlp : SineMLP
-        Sine MLP module.
+        Sine-activated MLP module.
+
     """
 
     def __init__(
@@ -221,13 +222,12 @@ class HerglotzNet(nn.Module):
         Herglotz positional encoding.
         Default = ``False``
 
-
     Attributes
     ----------
     pe : HerglotzPE
-        Herglotz positional encoding module.
+        Cartesian Herglotz positional encoding module.
     mlp : SineMLP
-        Sine MLP module.
+        Sine-activated MLP module.
 
     """
 
@@ -266,6 +266,7 @@ class HerglotzNet(nn.Module):
         x: torch.Tensor
             Tensor of shape ``(..., 2)`` containing spherical angles
             :math:`(\theta,\phi)` in radians.
+
 
         Returns
         -------
@@ -323,9 +324,10 @@ class SphericalSirenNet(nn.Module):
     Attributes
     ----------
     pe : SphericalHarmonicsPE
-        Spherical Harmonic positional encoding module.
+        Real spherical harmonics positional encoding module.
     mlp : SineMLP
-        Sine MLP module.
+        Sine-activated MLP module.
+
 
     """
 

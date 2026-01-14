@@ -61,6 +61,14 @@ class SphericalHarmonicsPE(nn.Module):
     Attributes
     ----------
     num_atoms : int
+        Number of spherical harmonic basis functions returned (i.e., output feature
+        dimension).
+    l_list : torch.Tensor
+        Tensor of shape ``(num_atoms,)`` containing the selected degrees
+        :math:`\ell_k` in standard ordering. Registered as a non-persistent buffer.
+    m_list : torch.Tensor
+        Tensor of shape ``(num_atoms,)`` containing the selected orders
+        :math:`m_k` in standard ordering. Registered as a non-persistent buffer.
     """
 
     def __init__(
@@ -159,22 +167,26 @@ class HerglotzPE(nn.Module):
     Attributes
     ----------
     num_atoms : int
-
+        Number of Herglotz atoms (output feature dimension).
     L_init : int
-
+        Upper bound used to initialize the magnitude parameters.
     rot : bool
-
-    qrot : Optional[torch.Tensor]
-        Learnable quaternions for rotations.
-    
+        If ``True``, applies a learnable quaternion rotation to all atoms.
+    sigmas : torch.nn.Parameter
+        Learnable magnitude parameters :math:`\sigma_k` with shape ``(num_atoms,)``.
     A_real0 : torch.Tensor
-        Real part of Herglotz vectors
-
+        Real part of the atom directions with shape ``(num_atoms, 3)``.
+        Registered as a non-persistent buffer.
     A_imag0 : torch.Tensor
-        Imaginary part of Herglotz vectors
+        Imaginary part of the atom directions with shape ``(num_atoms, 3)``.
+        Registered as a non-persistent buffer.
+    qrot : Optional[torch.nn.Parameter]
+        Learnable quaternions with shape ``(num_atoms, 4)`` if ``rot=True``;
+        otherwise ``None``.
+    inv_const : torch.Tensor
+        Constant prefactor ``1 / (1 + 2 * L_init)`` stored as a non-persistent
+        buffer (scalar tensor).
 
-    inv_const : float
-        Constant prefactor
 
     Notes
     -----
@@ -309,16 +321,16 @@ class FourierPE(nn.Module):
     Attributes
     ----------
     num_atoms : int
-
+        Number of Fourier features returned (output dimension).
     input_dim : int
-
-    omega0 : float 
-
-    Omega : torch.Tensor
-        Learnable weights
-    
-    bias : Optional[torch.Tensor]
-        Learnable bias
+        Dimension of the input coordinates.
+    omega0 : float
+        Frequency scaling factor applied to the projection.
+    Omega : torch.nn.Parameter
+        Learnable projection matrix with shape ``(num_atoms, input_dim)``.
+    bias : Optional[torch.nn.Parameter]
+        Learnable bias vector with shape ``(num_atoms,)`` if ``bias=True``;
+        otherwise ``None``.
     """
 
     def __init__(
