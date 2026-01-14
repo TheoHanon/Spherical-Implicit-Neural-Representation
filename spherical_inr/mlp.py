@@ -35,6 +35,7 @@ class ReLUMLP(nn.Module):
     bias:
         Whether to include biases in each linear layer.
 
+        
     Attributes
     ----------
     input_features : int
@@ -125,6 +126,7 @@ class SineMLP(nn.Module):
         Frequency factor :math:`\omega_0` used in the sine activation and in the
         weight initialization bound.
 
+        
     Attributes
     ----------
     input_features : int
