@@ -34,6 +34,16 @@ class ReLUMLP(nn.Module):
         List of hidden layer widths.
     bias:
         Whether to include biases in each linear layer.
+
+    Attributes
+    ----------
+    input_features : int
+        Dimensionality of the input features.
+    output_features : int
+        Dimensionality of the output features.
+    layers : torch.nn.ModuleList
+        Sequence of linear layers defining the MLP architecture.
+
     """
 
     def __init__(
@@ -114,6 +124,18 @@ class SineMLP(nn.Module):
     omega0:
         Frequency factor :math:`\omega_0` used in the sine activation and in the
         weight initialization bound.
+
+    Attributes
+    ----------
+    input_features : int
+        Dimensionality of the input features.
+    output_features : int
+        Dimensionality of the output features.
+    omega0 : float
+        Frequency scaling factor used in sine activations and initialization.
+    hidden_layers : torch.nn.ModuleList
+        Sequence of linear layers with sine activations applied to hidden layers.
+
     """
 
     def __init__(
