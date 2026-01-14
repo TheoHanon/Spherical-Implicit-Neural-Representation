@@ -58,6 +58,9 @@ class SphericalHarmonicsPE(nn.Module):
     num_atoms: int
         Number of spherical harmonic basis functions returned.
 
+    Attributes
+    ----------
+    num_atoms : int
     """
 
     def __init__(
@@ -152,6 +155,26 @@ class HerglotzPE(nn.Module):
     rot: bool, optional
         If ``True``, applies a learnable quaternion rotation to all atoms.
         Default = ``False``
+
+    Attributes
+    ----------
+    num_atoms : int
+
+    L_init : int
+
+    rot : bool
+
+    qrot : Optional[torch.Tensor]
+        Learnable quaternions for rotations.
+    
+    A_real0 : torch.Tensor
+        Real part of Herglotz vectors
+
+    A_imag0 : torch.Tensor
+        Imaginary part of Herglotz vectors
+
+    inv_const : float
+        Constant prefactor
 
     Notes
     -----
@@ -280,6 +303,22 @@ class FourierPE(nn.Module):
     omega0: float, optional
         Frequency scaling factor :math:`\omega_0`.
         Default = ``1.0``
+
+
+
+    Attributes
+    ----------
+    num_atoms : int
+
+    input_dim : int
+
+    omega0 : float 
+
+    Omega : torch.Tensor
+        Learnable weights
+    
+    bias : Optional[torch.Tensor]
+        Learnable bias
     """
 
     def __init__(

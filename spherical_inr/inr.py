@@ -33,12 +33,19 @@ class INR(nn.Module):
 
     Parameters
     ----------
-    positional_encoding : PositionalEncoding
+    positional_encoding : 
         Positional encoding module :math:`\psi`.
-        Must expose an ``out_dim`` attribute and be callable on a tensor.
-    mlp : MLP
+    mlp : 
         Backbone network applied to the encoded features.
-        Must expose ``in_dim`` and ``out_dim`` attributes and be callable.
+
+
+    Attributes
+    ----------
+    pe : torch.nn.Module
+        Positional encoding module :math:`\psi`.
+    mlp : torch.nn.Module
+        Backbone network applied to the encoded features.
+
     """
 
     def __init__(self, positional_encoding: nn.Module, mlp: nn.Module):
@@ -110,6 +117,14 @@ class SirenNet(nn.Module):
     input_dim: int, optional
         Dimensionality of the input space. Must be ``2`` for :math:`(\theta,\phi)`.
         Default = ``2``
+
+
+    Attributes
+    ----------
+    pe : FourierPE
+        Fourier positional encoding module.
+    mlp : SineMLP
+        Sine MLP module.
     """
 
     def __init__(
@@ -206,6 +221,14 @@ class HerglotzNet(nn.Module):
         Herglotz positional encoding.
         Default = ``False``
 
+
+    Attributes
+    ----------
+    pe : HerglotzPE
+        Herglotz positional encoding module.
+    mlp : SineMLP
+        Sine MLP module.
+
     """
 
     def __init__(
@@ -296,6 +319,13 @@ class SphericalSirenNet(nn.Module):
         Frequency factor :math:`\omega_0^{\mathrm{MLP}}` used in the sine activations
         of the MLP.
         Default : ``1.0``.
+
+    Attributes
+    ----------
+    pe : SphericalHarmonicsPE
+        Spherical Harmonic positional encoding module.
+    mlp : SineMLP
+        Sine MLP module.
 
     """
 
