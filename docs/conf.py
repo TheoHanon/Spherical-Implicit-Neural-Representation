@@ -45,7 +45,26 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 html_theme = "pydata_sphinx_theme"
 html_logo = "_static/atoms.png"
-html_static_path = []
+html_static_path = ["_static"]
+
+html_theme_options = {
+    "icon_links": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/TheoHanon/Spherical-Implicit-Neural-Representation",
+            "icon": "fa-brands fa-github",
+            "type": "fontawesome",
+        }
+    ],
+    "use_edit_page_button": True,
+}
+
+html_context = {
+    "github_user": "TheoHanon",
+    "github_repo": "Spherical-Implicit-Neural-Representation",
+    "github_version": "main",
+    "doc_path": "docs",
+}
 
 html_sidebars = {
     "_api": [],

@@ -9,11 +9,11 @@
 
 - **$\mathbb{S}^2$** (HerglotzNet, SphericalSirenNet)
 - **Volumetric data** in $\mathbb{R}^3$ with radial basis (solid harmonics)
-- **Generic ℝᵈ inputs** via FourierPE, HerglotzPE
+- **Generic $\mathbb{R}^d$ inputs** via FourierPE, HerglotzPE
 
 > **Coordinate conventions**:
 >
-> - **Angles**: $\theta \in [0,\pi], \varphi ∈[0,2\pi)$ in radians.
+> - **Angles**: $\theta \in [0,\pi], \varphi \in[0,2\pi)$ in radians.
 > - **Full spherical**: $(r, \theta, \varphi)$.
 
 ## 📦 Installation
